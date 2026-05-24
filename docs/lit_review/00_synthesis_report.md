@@ -216,14 +216,77 @@ Phase 3（展示验证，Week 14，可选）：
 
 ---
 
-## 八、下一步行动
+## 八、补充方向调研摘要（2026-05-25 扩展，方向5–8）
+
+---
+
+### 方向5：Multi-objective / Pareto MARL → `05_multi_objective_pareto_marl.md`
+
+**关联组件**：Lagrangian 安全优化模块（`safecomm_psched.py`，λ_s 更新规则）
+
+1. **Lagrangian 选择有理论保证**：根据 CMDP-MOMDP 等价定理，单约束 Lagrangian 是约束 Pareto 前沿上的最优求解器——无需替换为多目标方法。SafeComm-PSched 当前设计是完备的。
+2. **唯一劣势：梯度冲突（可修补）**：λ_s 增大时安全梯度压制任务梯度，导致训练振荡。在 `ppo_utils.py` 加入 MGDA 梯度调和（~20 行代码）可解决此问题，实现代价低。
+3. **k 消融实验 = 约束 Pareto 前沿可视化**：不同 k 值下的{J_task, J_safe}点集即为约束 Pareto 曲线。引入 Constraint Hypervolume 指标对比"安全调度 vs 随机 Top-k"，可在不改动算法的前提下提升论文理论贡献层次。
+4. **多约束扩展时才需要多目标方法**：当前单安全约束场景 Lagrangian 最优；未来若扩展到安全+能耗+通信质量三约束，可考虑引入 MORL/D。
+
+---
+
+### 方向6：CBF / MPC / Shielding for Safe MARL → `06_cbf_mpc_shielding_safe_marl.md`
+
+**关联组件**：安全感知调度器（`scheduler.py`，CBF 值计算）、安全约束处理
+
+1. **CBF 调度器的理论强化**：Wang et al. (TAC 2017) 的公式 d_buffer = v_max × Δt_comm 可量化通信间隔与安全裕量的关系，直接为 Proposition 2 提供理论支撑：k 越小 → 平均通信间隔越大 → 所需缓冲距离越大 → 安全成本越高，形成可证明的单调关系。
+2. **CBF+Lagrangian 混合方案（推荐）**：主框架保持 Lagrangian，执行层可选插入轻量 CBF-QP 过滤层（h_ij 已在调度器计算，复用代价极低）。作为消融实验展示，可直接回应"软安全 vs. 硬安全"审稿质疑。
+3. **MPC/Shielding 不适用于本场景**：MPC 需要邻居轨迹预测（通信量更高），Shielding 依赖连续状态空间离散化（误差大）。两者均不适合通信受限实时 UAV 控制，SafeComm 选择 Lagrangian 是正确判断。
+4. **SafeComm 填补 CBF 研究的反方向空白**：MACBF 研究"通信缺失时 CBF 如何降级"，SafeComm 研究"通信如何主动服务 CBF 需求"——方向相反但互补，在 Related Work 中可定位为"同一问题的两侧面"。
+
+---
+
+### 方向7：Graph / Attention / Scalable MARL → `07_graph_attention_scalable_marl.md`
+
+**关联组件**：消息编码与聚合网络（`algorithms/networks.py`，MessageEncoder）
+
+1. **双头注意力是最优先改进（H=2，~20 行代码）**：在单头注意力基础上升级为双头（每头 d_head=32，拼接后线性投影回 d_msg=64），可让两个头分别学习"安全距离"和"编队角色"两类正交信息；与 CBF-TopK 动态图完全兼容，无稳定性风险，预期提升任务奖励 2-5% 并降低方差。
+2. **禁用多跳 GCN**：DGN 风格的 2 层图卷积使信息经中间节点间接传播，隐式软化了带宽硬约束——与 SafeComm 的通信预算理论贡献语义冲突，不应使用。消息聚合跳数必须固定为 1。
+3. **n>8 可扩展性无需额外创新**：INFOMARL（ICML 2023）已在 n=100 UAV 场景验证局部 TopK 注意力的可扩展性；SafeComm Phase 2 的 n=8-16 处于充分验证区间，无需特殊架构变更。
+4. **端到端拓扑学习与 CBF 调度不兼容**：MAGIC/G2ANet 的可学习拓扑会截断 CBF 调度的梯度，且无法解耦通信调度与消息聚合的贡献——消融实验设计困难，**不推荐**。
+
+---
+
+### 方向8：Simulation-to-Reality Stack → `08_sim2real_uav_marl.md`
+
+**关联组件**：`envs/pybullet_uav_env.py`（Phase 2 仿真）、`configs/`（训练超参数）
+
+1. **相对位置传感噪声是最高优先级随机化项**：SafeComm 的 CBF 值 h_ij 直接依赖相对距离，在 h_ij→0 时噪声影响被非线性放大。Phase 2 仿真中**必须**注入相对位置高斯噪声（σ=0.03m），否则调度器真实部署时出现系统性误判。
+2. **通信延迟随机化是 SafeComm 的专有关键项**：通信延迟 >40ms 导致调度基于过期 CBF 值，引发级联安全失效。需在 Phase 2 加入通信延迟（0–40ms Uniform）+ 消息 Dropout（0–30%）+ 通信预算 ±1 抖动，统一管理于 `configs/phase2_dr.yaml`。
+3. **RARL 明确不适用**：在四旋翼场景中已有多篇论文报告 RARL 导致策略崩塌，应完全避免。坚持 Uniform DR，资源充裕时使用 ADR/DROPO。
+4. **渐进约束收紧与 Lagrangian 天然兼容**：Phase 1 宽松约束（d_min=0.3m）→ Phase 2 收紧（d_min=0.5m）→ 真实飞行（d_min=0.8m），对应 Lagrangian 的 d 参数分阶段调整，提供自然的课程迁移机制。
+
+---
+
+### 更新后的 SafeComm 设计建议矩阵
+
+| SafeComm 组件 | 当前设计 | 文献支持的改进方向 | 优先级 | 实现代价 |
+|--------------|---------|-----------------|--------|---------|
+| Lagrangian 模块（`ppo_utils.py`）| 单约束 λ_s | MGDA 梯度调和（防振荡）| **高** | ~20 行 |
+| 安全调度器（`scheduler.py`）| 距离型 CBF 值 | Wang TAC 2017 保守缓冲公式（理论强化）| **高** | 无代码改动（理论分析）|
+| 消息聚合（`networks.py`）| 单头注意力 | H=2 双头注意力（Drop-in）| **中** | ~20 行 |
+| CBF 安全过滤 | 无（仅 Lagrangian）| 执行层轻量 CBF-QP（消融实验）| 中 | ~30 行 |
+| Phase 2 仿真（`pybullet_uav_env.py`）| 待建 | 相对位置噪声 + 通信延迟随机化 | **高** | 配置为主 |
+| 训练配置（`configs/`）| 默认 | phase2_dr.yaml（含7类 DR 参数）| **高** | 新增配置文件 |
+| k 消融实验 | 性能对比 | 约束 Pareto 前沿（CHV 指标）| 中 | 无代码改动（分析框架）|
+
+---
+
+## 九、下一步行动
 
 - [x] 文献调研（方向1–4）完成
 - [x] 研究缺口确认（SafeComm-MARL 空白成立）
 - [x] 确定最相关对比工作（Liu et al. NeurIPS 2023）
 - [x] Baseline 方案确定（6个 Baseline）
-- [ ] **安全建模方式选型**（推荐：CMDP + Lagrangian；待确认）
-- [ ] **仿真环境搭建**（推荐起点：MPE 扩展 / 自制轻量仿真）
-- [ ] **问题形式化**（CDecPOSG-CB 框架的数学定义）
-- [ ] **算法设计**（SafeComm-MARL 核心算法）
-- [ ] **理论分析**（收敛性 + 安全性证明）
+- [x] **文献调研扩展（方向5–8）完成**（2026-05-25）
+- [ ] **安全建模方式选型**（已确认：CMDP + Lagrangian，MGDA 增强）
+- [ ] **仿真环境搭建**（推荐起点：Phase 1 双积分器 + phase2_dr.yaml 配置）
+- [ ] **问题形式化**（CDecPOSG-CB 框架，已完成草案）
+- [ ] **算法设计**（SafeComm-PSched，已完成设计规格）
+- [ ] **理论分析**（收敛性 + CBF 保守缓冲定理 + Pareto 前沿单调性）
