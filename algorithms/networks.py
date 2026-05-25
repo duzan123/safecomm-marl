@@ -218,12 +218,19 @@ class MultiHeadAttentionAggregator(nn.Module):
 
     def forward(
         self,
-        query_enc: torch.Tensor,      # (d_msg,)
-        neighbor_encs: torch.Tensor,  # (num_neighbors, d_msg)
+        query_enc: torch.Tensor,                         # (d_msg,) or (batch, d_msg)
+        neighbor_encs: "List[torch.Tensor] | torch.Tensor",  # list of (d_msg,) or (num_nbr, d_msg)
     ) -> torch.Tensor:
         import math
-        if neighbor_encs.shape[0] == 0:
-            return torch.zeros(self.d_msg, device=query_enc.device)
+
+        # Normalise neighbor_encs: accept either a list of tensors or a pre-stacked tensor
+        if isinstance(neighbor_encs, list):
+            if len(neighbor_encs) == 0:
+                return torch.zeros(self.d_msg, device=query_enc.device)
+            neighbor_encs = torch.stack(neighbor_encs, dim=0)  # (num_nbr, d_msg)
+        else:
+            if neighbor_encs.shape[0] == 0:
+                return torch.zeros(self.d_msg, device=query_enc.device)
 
         scale = math.sqrt(self.d_head)
         heads = []
@@ -236,6 +243,35 @@ class MultiHeadAttentionAggregator(nn.Module):
             heads.append(head_h)
 
         return self.W_o(torch.cat(heads, dim=-1))  # (d_msg,)
+
+    def forward_batch(
+        self,
+        msgs: torch.Tensor,          # (batch, n_agents, d_msg)
+        adj_matrices: torch.Tensor,  # (batch, n_agents, n_agents)
+    ) -> torch.Tensor:               # (batch, n_agents, d_msg)
+        """Batched multi-head attention for PPO update phase."""
+        import math
+        batch_size, n_agents, _ = msgs.shape
+        scale = math.sqrt(self.d_head)
+        heads = []
+        for h in range(self.H):
+            Q = self.W_q[h](msgs)   # (batch, n, d_head)
+            K = self.W_k[h](msgs)   # (batch, n, d_head)
+            V = self.W_v[h](msgs)   # (batch, n, d_head)
+            # scores: (batch, n, n)
+            scores = torch.bmm(Q, K.transpose(1, 2)) / scale
+            # mask out non-neighbors and isolated agents
+            mask = (adj_matrices == 0)
+            scores = scores.masked_fill(mask, float("-inf"))
+            all_masked = mask.all(dim=-1, keepdim=True)
+            scores = scores.masked_fill(all_masked.expand_as(scores), 0.0)
+            attn = F.softmax(scores, dim=-1)  # (batch, n, n)
+            attn = attn.masked_fill(all_masked.expand_as(attn), 0.0)
+            head_h = torch.bmm(attn, V)  # (batch, n, d_head)
+            heads.append(head_h)
+        # concat and project
+        concat = torch.cat(heads, dim=-1)  # (batch, n, H*d_head)
+        return self.W_o(concat)            # (batch, n, d_msg)
 
 
 # ==============================================================================
@@ -620,27 +656,22 @@ class SafeCommNetworks(nn.Module):
         msgs_flat = self.encoder(obs_flat)  # [batch*n, msg_dim]
         msgs = msgs_flat.view(batch_size, self.n_agents, self.msg_dim)
 
-        # 注意力聚合（批量）
-        # Query: [batch, n, msg_dim]
-        queries = self.aggregator.query_proj(msgs)  # [batch, n, msg_dim]
-        keys = self.aggregator.key_proj(msgs)        # [batch, n, msg_dim]
-
-        # 注意力得分: [batch, n, n]
-        scores = torch.bmm(queries, keys.transpose(1, 2)) * self.aggregator.scale
-
-        # 对非邻居（adj=0）位置施加 -inf 掩码
-        mask = (adj_matrices == 0)
-        scores = scores.masked_fill(mask, float("-inf"))
-
-        # 处理全零行（孤立节点）：避免 softmax 产生 NaN
-        all_masked = mask.all(dim=-1, keepdim=True)  # [batch, n, 1]
-        scores = scores.masked_fill(all_masked.expand_as(scores), 0.0)
-
-        attn = F.softmax(scores, dim=-1)  # [batch, n, n]
-        attn = attn.masked_fill(all_masked.expand_as(attn), 0.0)
-
-        # 聚合: [batch, n, msg_dim]
-        agg_msgs = torch.bmm(attn, msgs)  # [batch, n, msg_dim]
+        # 注意力聚合（批量）—— 支持多头和单头
+        # Dispatch to appropriate batch aggregation
+        if hasattr(self.aggregator, 'forward_batch'):
+            agg_msgs = self.aggregator.forward_batch(msgs, adj_matrices)
+        else:
+            # Single-head fallback
+            queries = self.aggregator.query_proj(msgs)
+            keys = self.aggregator.key_proj(msgs)
+            scores = torch.bmm(queries, keys.transpose(1, 2)) * self.aggregator.scale
+            mask = (adj_matrices == 0)
+            scores = scores.masked_fill(mask, float("-inf"))
+            all_masked = mask.all(dim=-1, keepdim=True)
+            scores = scores.masked_fill(all_masked.expand_as(scores), 0.0)
+            attn = F.softmax(scores, dim=-1)
+            attn = attn.masked_fill(all_masked.expand_as(attn), 0.0)
+            agg_msgs = torch.bmm(attn, msgs)
 
         # 评估动作
         obs_flat2 = obs_batch.view(batch_size * self.n_agents, self.obs_dim)
