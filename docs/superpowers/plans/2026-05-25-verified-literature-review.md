@@ -10,6 +10,12 @@
 
 ---
 
+## 语言要求
+
+- 所有新生成的 `docs/lit_review_verified/*.md` 文献调研报告使用简体中文撰写。
+- 论文标题、会议/期刊名、技术术语、DOI、arXiv 编号、BibTeX 字段和引用元数据可保留英文原文，以保证检索和引用准确性。
+- 执行计划过程中的汇报、审计结论和最终总结默认使用简体中文。
+
 ## File Structure
 
 - Create: `docs/lit_review_verified/`

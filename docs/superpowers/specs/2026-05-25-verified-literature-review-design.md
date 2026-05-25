@@ -28,6 +28,10 @@ Generate nine Markdown documents:
 
 The original directory `docs/lit_review/` is read-only for this task.
 
+## Language Requirement
+
+All newly generated literature review reports under `docs/lit_review_verified/` must be written in Simplified Chinese. Paper titles, venue names, technical terms, DOI strings, arXiv identifiers, BibTeX fields, and citation metadata may remain in English when that improves traceability.
+
 ## Method
 
 Use the domain-reinforced rewrite approach:
