@@ -6,10 +6,10 @@
 
 - 原报告文献数量：按原“关键论文列表”统计为 15 篇；原报告另列 2 条安全/约束 MARL 边界工作，未计入方向2核心条目数。
 - Verified 数量：5。
-- Metadata mismatch 数量：7。
+- Metadata mismatch 数量：6。
 - Weak match 数量：0。
 - Not found 数量：0。
-- Replaced 数量：3。
+- Replaced 数量：4。
 - 新增补充文献数量：3（不计入原文献审计表状态统计；另有 2 条原报告边界工作被保留为背景参考）。
 - 对原报告核心结论的影响：总体结论“通信受限 MARL 主要优化任务奖励、协作性能或通信效率，几乎不直接优化安全约束”基本成立。但原报告把“稀疏通信、低带宽、鲁棒通信”过快等同于“安全相关通信”，需要收窄表述：这些方法通常只处理通信预算、拓扑、信道或消息效率，不能推出对状态约束、碰撞避免、约束违反概率或 CBF/CMDP 安全指标有保证。另有若干条目存在标题、作者、venue 或年份错误，必须以审计表中的修正版为准。
 
@@ -23,7 +23,7 @@
 | Learning Attentional Communication for Multi-Agent Cooperation (ATOC) | Verified | 论文题名、作者、NeurIPS 2018 元数据可核验。 | NeurIPS: https://papers.nips.cc/paper/7956-learning-attentional-communication-for-multi-agent-cooperation；PDF: https://proceedings.neurips.cc/paper/2018/file/6a8018b3a00b69c008601b8becae392b-Paper.pdf | 保留为注意力门控和稀疏通信代表。 |
 | Learning to Schedule Communication in Multi-Agent Systems (SchedNet) | Metadata mismatch | 方法和作者真实，但正式题名为 Learning to Schedule Communication in Multi-agent Reinforcement Learning，venue 为 ICLR 2019。 | OpenReview: https://openreview.net/forum?id=SJxu5iR9KQ；PDF: https://openreview.net/pdf?id=HUAnBToP_a | 以 ICLR 2019 修正题名保留，是显式带宽/共享信道调度代表。 |
 | Graph Convolutional Reinforcement Learning (DGN) | Verified | 论文题名、作者、ICLR 2020 元数据可核验。 | OpenReview: https://openreview.net/forum?id=HkxdQkSYDB；OpenReview 记录副本: https://openreview.net/forum?id=S8icDSeqfvy | 保留为图拓扑/邻域传播通信代表。 |
-| Networked Multi-Agent Reinforcement Learning with Communication | Metadata mismatch | 未找到该精确题名的 ICML 2020 论文；可核验的对应理论线索是 Fully Decentralized Multi-Agent Reinforcement Learning with Networked Agents，ICML 2018。 | ICML 2018: https://icml.cc/virtual/2018/poster/2269；arXiv: https://arxiv.org/abs/1802.08757 | 以 Fully Decentralized Multi-Agent Reinforcement Learning with Networked Agents 替换原题名，用作固定/时变网络通信理论参考。 |
+| Networked Multi-Agent Reinforcement Learning with Communication | Replaced | 原题名不可核验；可核验替代论文为 Fully Decentralized Multi-Agent Reinforcement Learning with Networked Agents，ICML 2018。 | ICML 2018: https://icml.cc/virtual/2018/poster/2269；arXiv: https://arxiv.org/abs/1802.08757 | 原题名不作为论据；替换为 Fully Decentralized Multi-Agent Reinforcement Learning with Networked Agents，用作固定/时变网络通信理论参考。 |
 | TarMAC: Targeted Multi-Agent Communication | Metadata mismatch | 题名、ICML 2019 可核验，但原报告作者列表错误；真实作者为 Abhishek Das、Theophile Gervet、Joshua Romoff、Dhruv Batra、Devi Parikh、Mike Rabbat、Joelle Pineau。 | PMLR: https://proceedings.mlr.press/v97/das19a.html；arXiv: https://arxiv.org/abs/1810.11187 | 修正作者后保留为定向通信代表。 |
 | Learning Individually Inferred Communication for Multi-Agent Cooperation (I2C) | Verified | 论文题名、作者、NeurIPS 2020 元数据可核验。 | NeurIPS: https://papers.nips.cc/paper_files/paper/2020/hash/fb2fcd534b0ff3bbed73cc51df620323-Abstract.html；arXiv: https://arxiv.org/abs/2006.06455 | 保留为因果/个体推断通信选择代表。 |
 | NeurComm: Neighbor Routing and Message Passing for Robust Multi-Agent Communication | Replaced | 原题名不可核验；可核验替代论文为 Multi-agent Reinforcement Learning for Networked System Control，ICLR 2020，其中提出 NeurComm 通信协议，但原报告题名与年份不成立。 | OpenReview: https://openreview.net/forum?id=Syx7A3NFvH；arXiv: https://arxiv.org/abs/2004.01339；DBLP: https://dblp.org/rec/conf/iclr/ChuCK20 | 原题名不作为论据；替换为 Multi-agent Reinforcement Learning for Networked System Control。 |
@@ -78,4 +78,4 @@
 - Benjamin Freed, Rohan James, Guillaume Sartoretti, Howie Choset. Sparse Discrete Communication Learning for Multi-Agent Cooperation Through Backpropagation. IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), 2020. 来源链接：https://publications.ri.cmu.edu/sparse-discrete-communication-learning-for-multi-agent-cooperation-through-backpropagation；DOI：https://doi.org/10.1109/IROS45743.2020.9341079
 - Benjamin Freed, Guillaume Sartoretti, Jiaheng Hu, Howie Choset. Communication Learning via Backpropagation in Discrete Channels with Unknown Noise. Proceedings of the AAAI Conference on Artificial Intelligence, 34(05):7160-7168, 2020. 来源链接：https://ojs.aaai.org/index.php/AAAI/article/view/6205；DOI：https://doi.org/10.1609/aaai.v34i05.6205
 - Shangding Gu, Jakub Grudzien Kuba, Munning Wen, Ruiqing Chen, Ziyan Wang, Zheng Tian, Jun Wang, Alois Knoll, Yaodong Yang. Multi-Agent Constrained Policy Optimisation. arXiv, 2021. 来源链接：https://arxiv.org/abs/2110.02793
-- Jiaming Ji, Borong Zhang, Jiayi Zhou, Xuehai Pan, Weidong Huang, Ruiyang Sun, Yiran Geng, Yifan Zhong, Juntao Dai, Yaodong Yang. Safety-Gymnasium: A Unified Safe Reinforcement Learning Benchmark. Advances in Neural Information Processing Systems 36 (NeurIPS 2023) Datasets and Benchmarks Track, 2023. 来源链接：https://papers.nips.cc/paper_files/paper/2023/hash/3c557a3d6a48cc99444f85e924c66753-Abstract-Datasets_and_Benchmarks.html；https://arxiv.org/abs/2310.12567
+- Jiaming Ji, Borong Zhang, Jiayi Zhou, Xuehai Pan, Weidong Huang, Ruiyang Sun, Yiran Geng, Yifan Zhong, Josef Dai, Yaodong Yang. Safety-Gymnasium: A Unified Safe Reinforcement Learning Benchmark. Advances in Neural Information Processing Systems 36 (NeurIPS 2023) Datasets and Benchmarks Track, 2023. 来源链接：https://papers.nips.cc/paper_files/paper/2023/hash/3c557a3d6a48cc99444f85e924c66753-Abstract-Datasets_and_Benchmarks.html；https://arxiv.org/abs/2310.12567
