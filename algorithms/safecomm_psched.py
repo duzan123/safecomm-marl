@@ -96,6 +96,8 @@ class SafeCommPSched:
             # v2.0 新增
             "lambda_threshold": 0.1,   # MGDA 激活阈值（v2.0）
             "H": 2,                    # 注意力头数（v2.0）
+            "v_max_cbf": 1.0,          # CBF 保守缓冲最大速度（v2.0）
+            "dt": 0.1,                  # 时间步长（CBF 缓冲计算用）
         }
 
         if config is not None:
@@ -132,6 +134,8 @@ class SafeCommPSched:
             k=self.config["k"],
             d_min=self.config["d_min"],
             schedule_mode=self.config["schedule_mode"],
+            v_max=self.config.get("v_max_cbf", self.config.get("v_max", 1.0)),
+            dt=self.config.get("dt", 0.1),
         )
 
         # 优化器
@@ -185,6 +189,7 @@ class SafeCommPSched:
         self.networks.eval()
 
         obs_list, info = self.env.reset()
+        self.scheduler.reset_episode(self.env.positions)
         episode_rewards = []
         episode_costs = []
         episode_formations = []
@@ -208,6 +213,7 @@ class SafeCommPSched:
                 phys_edges=phys_edges,
             )
             active_edges = sched_result["active_edges"]
+            self.scheduler.update_history(active_edges, self.env.positions)
             neighbor_lists = sched_result["neighbor_lists"]
             adj_matrix = sched_result["adjacency_matrix"]
             bw_utils.append(sched_result["bandwidth_utilization"])
@@ -259,6 +265,7 @@ class SafeCommPSched:
                 ep_cost = 0.0
                 n_episodes += 1
                 obs_list, _ = self.env.reset()
+                self.scheduler.reset_episode(self.env.positions)
             else:
                 obs_list = next_obs_list
 
