@@ -1,0 +1,9 @@
+# 消融实验：随机 Top-k 调度（验证安全感知调度的必要性）
+# 覆盖 default.yaml 中的调度器模式
+
+comm:
+  k: 4
+  schedule_mode: "random"  # 对照：随机选 k 条边，而非按 CBF 危险度
+
+training:
+  checkpoint_dir: "checkpoints/ablation_random_sched"
