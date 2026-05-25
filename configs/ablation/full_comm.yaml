@@ -1,9 +1,0 @@
-# 消融实验：全通信（k = 无限）
-# 等价于安全 MARL 不受通信约束（性能上界）
-
-comm:
-  k: 9999          # 远大于 n*(n-1)/2，等效全连通
-  schedule_mode: "full"
-
-training:
-  checkpoint_dir: "checkpoints/ablation_full_comm"

@@ -16,7 +16,7 @@
 
 **核心问题**：现有安全 MARL（MACPO、MAPPO-Lag）假设全通信；现有通信受限 MARL（DGN、SchedNet）不考虑安全约束——二者的联合优化是 NeurIPS/ICML/ICLR 层面的实质性空白。
 
-**解决方案**：提出 **SafeComm-PSched** 算法——安全感知调度器（Safety-Priority Scheduler）按 CBF 危险度优先分配通信预算，MAPPO + 单 Lagrangian 处理安全约束，两者通过 CBF 值自然耦合。
+**解决方案**：提出 **SafeComm-VoI**（Safety-aware Value-of-Information MARL）算法——VoI 感知调度器（AoI 老化 × CBF 危险度）优先分配通信预算，HOCBF-QP 硬盾 + 双约束 Lagrangian（λ_s + λ_int）+ 两阶段 MGDA 实现安全与通信干预成本的联合优化。
 
 **目标期刊**：NeurIPS / ICML / ICLR
 
@@ -24,10 +24,14 @@
 
 ## 当前状态
 
-- **阶段**：设计完成，代码尚未实现
+- **阶段**：设计 + 实施计划完成，代码尚未实现（Phase 1 待执行）
 - 文献调研（4 个方向，共约 50 篇）已完成 → `docs/lit_review/`
-- 系统设计规格已完成 → `docs/superpowers/specs/2026-05-25-safecomm-marl-design.md`
+- 系统设计规格已完成 → `docs/superpowers/specs/2026-05-26-safecomm-voi-design.md`
+- 4 阶段详细实施计划已完成 → `docs/superpowers/plans/`
+- 总体协调手册已完成（Claude 审查用）→ `docs/superpowers/specs/2026-05-26-safecomm-voi-master-coordination.md`
 - 源代码尚未创建，依赖项和工具链未建立
+
+**协作模型**：Claude 负责阶段审查、架构决策、阻塞诊断；Codex 负责具体代码实现。阶段切换需 Claude 审查通过后方可进入下一阶段。
 
 ---
 
@@ -42,19 +46,31 @@
 
 ---
 
-## 算法：SafeComm-PSched
+## 算法：SafeComm-VoI
 
 **核心组件：**
 
-1. **安全感知调度器**（无需训练，构造性保证通信预算）
-   - CBF 值：$h_{ij}(t) = (\|p_i - p_j\| - d_\text{min})^2$
-   - 通信图：$E_t = \text{TopK}(E^\text{phys}_t,\ k,\ \text{by}\ 1/h_{ij})$
+1. **VoI 感知调度器**（无需训练，构造性保证通信预算 $|E_t| \leq k$）
+   - 优先级：$\text{priority}_{ij} = \frac{1 + \beta \cdot \min(\Delta t_\text{comm}/\tau_\text{ref},\ \tau_\text{max})}{\max(h^\text{sched}_{ij},\ \varepsilon)}$
+   - 调度 CBF：$h^\text{sched}_{ij} = \max(\|p_i - \hat{p}_j\| - d_\text{min} - d_\text{buf,ij},\ 0)^2$；$d_\text{buf} = v_\text{max} \cdot \Delta t_\text{comm}$
+   - 通信图：$E_t = \text{TopK}(E^\text{phys}_t,\ k,\ \text{by priority})$
 
-2. **消息编码与聚合**：单头注意力聚合邻居消息（$d_\text{msg} = 64$）
+2. **HOCBF-QP 硬盾**（运行时安全过滤，每 agent 独立 QP）
+   - 优化变量：$[a_x, a_y, a_z, \xi]$（4 维，含 slack $\xi \geq 0$）
+   - 约束：$2r^T a + 2\|v\|^2 + \alpha_1 \dot{h} + \alpha_2 \psi_1 - m_\text{acc} + \xi \geq 0$
+   - 双动作不变项：环境执行 $a^*$（QP 输出），PPO log prob 使用 $a^\pi$（策略输出），两者分开存储
 
-3. **MAPPO 策略网络**：参数共享 Actor + 集中式 Critic + Cost Critic
+3. **消息编码与聚合**：单头注意力聚合邻居消息（$d_\text{msg} = 64$），参数共享
 
-4. **Lagrangian 安全优化**：$\lambda_s \leftarrow \max(0,\ \lambda_s + \alpha_\lambda \cdot (\hat{J}_\text{safe} - d))$
+4. **MAPPO 策略网络**：参数共享 Actor + 集中式 Critic（CTDE）
+
+5. **双约束 Lagrangian**：
+   - $\lambda_s$：安全约束（始终激活）
+   - $\lambda_\text{int}$：干预成本约束（Safety Gate EMA 激活：$J^\text{safe}_\text{ema} \leq d_\text{safe} + \delta_s$）
+
+6. **两阶段 MGDA 梯度协调**：
+   - 第一级：$(g_\text{task},\ \lambda_s \cdot g_\text{safe})$
+   - 第二级：$(g_{ts},\ \lambda_\text{int} \cdot g_\text{int})$
 
 ---
 
@@ -63,27 +79,39 @@
 ```
 safecomm-marl/
 ├── envs/
-│   ├── uav_formation_env.py     # 轻量 2D/3D 仿真（双积分器，Phase 1）
-│   └── pybullet_uav_env.py      # PyBullet 四旋翼仿真（Phase 2）
+│   ├── uav_formation_env.py       # 轻量双积分器仿真（Phase 1-2）
+│   ├── pybullet_uav_env.py        # PyBullet 四旋翼仿真（Phase 3）
+│   ├── domain_randomization.py    # DR 包装器，噪声注入 obs（Phase 3）
+│   └── pursuit_env.py             # 追逃任务环境（Phase 4）
 ├── algorithms/
-│   ├── safecomm_psched.py       # 核心算法主文件
-│   ├── scheduler.py             # 安全感知调度器（TopK + CBF）
-│   ├── networks.py              # Actor / Critic / CostCritic / MessageEncoder
-│   └── ppo_utils.py             # GAE、PPO clip 工具函数
+│   ├── safecomm_psched.py         # 核心算法主文件（SafeComm-VoI）
+│   ├── scheduler.py               # VoI 感知调度器（TopK + AoI + CBF）
+│   ├── hocbf_qp.py                # HOCBF-QP 硬盾（Phase 2）
+│   ├── networks.py                # Actor / Critic / MessageEncoder
+│   ├── scalable_critic.py         # Transformer N-agnostic Critic（Phase 4）
+│   └── ppo_utils.py               # GAE、PPO clip、RolloutBuffer
 ├── baselines/
 │   ├── mappo.py
 │   ├── macpo.py
 │   ├── mappo_lag.py
-│   └── dgn_mappo.py
+│   ├── dgn_mappo.py
+│   ├── liu2023.py                 # Liu et al. NeurIPS 2023
+│   └── cbf_ppo.py                 # CBF-PPO（Qin RA-L 2023）
 ├── configs/
-│   ├── default.yaml             # 默认超参数
-│   └── ablation/                # 消融实验配置
-├── train.py                     # 训练入口
-├── evaluate.py                  # 评估入口
+│   ├── default.yaml               # 默认超参数
+│   └── ablation/                  # 消融实验配置
+├── train.py                       # 单任务训练入口
+├── train_multitask.py             # 多任务训练入口（Phase 4）
+├── evaluate.py                    # 评估入口（支持 --shield on/off）
 └── tests/
-    ├── test_scheduler.py
-    ├── test_env.py
-    └── test_algorithm.py
+    ├── test_scheduler.py          # Phase 1
+    ├── test_env.py                # Phase 1
+    ├── test_algorithm.py          # Phase 1
+    ├── test_hocbf_qp.py           # Phase 2
+    ├── test_baselines.py          # Phase 2
+    ├── test_pybullet_env.py       # Phase 3
+    ├── test_pursuit_env.py        # Phase 4
+    └── test_scalable_critic.py    # Phase 4
 ```
 
 ---
@@ -102,12 +130,17 @@ safecomm-marl/
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `N` | 4–8 | UAV 数量（Phase 1） |
+| `N` | 4（→8） | UAV 数量（Phase 1-3 为 4，Phase 4 扩展至 8） |
 | `k` | 4 | 通信预算（每步最多活跃链路数） |
-| `d` | 0.1 | 安全约束阈值 |
+| `d_safe` | 0.1 | 安全约束阈值 |
+| `d_int` | 0.05 | 干预成本约束阈值 |
 | `d_min` | 0.5 m | 最小安全距离 |
 | `d_msg` | 64 | 消息向量维度 |
 | 隐藏层 | [256, 256] | Actor / Critic MLP 规模 |
+| `obs_dim` | 6 + K_obs×6 | 观测维度（状态 6 维 + K 邻居各 6 维） |
+| `β` | 0.5 | VoI 调度器 AoI 老化权重 |
+| `τ_ref` | 5 步 | AoI 参考时间窗口 |
+| `v_max` | 2.0 m/s | CBF 缓冲区计算用最大速度 |
 
 ---
 
@@ -126,9 +159,20 @@ safecomm-marl/
 
 ## 文档索引
 
-- `docs/lit_review/00_synthesis_report.md` — 文献调研综合报告（约 50 篇）
+### 文献调研
+- `docs/lit_review/00_synthesis_report.md` — 综合报告（约 50 篇）
 - `docs/lit_review/01_safe_marl.md` — 安全 MARL 方向
 - `docs/lit_review/02_comm_constrained_marl.md` — 通信受限 MARL 方向
 - `docs/lit_review/03_safety_comm_intersection.md` — 安全×通信交叉方向
 - `docs/lit_review/04_uav_formation.md` — 多 UAV 编队控制方向
-- `docs/superpowers/specs/2026-05-25-safecomm-marl-design.md` — 系统设计规格（算法伪代码、实验设计、理论贡献）
+
+### 设计规格
+- `docs/superpowers/specs/2026-05-25-safecomm-marl-design.md` — 初版设计规格（SafeComm-PSched，已过时）
+- `docs/superpowers/specs/2026-05-26-safecomm-voi-design.md` — **当前设计规格**（SafeComm-VoI，算法伪代码、实验设计、理论贡献）
+- `docs/superpowers/specs/2026-05-26-safecomm-voi-master-coordination.md` — **Claude 协调手册**（阶段门控标准、12 项架构约束、审查协议）
+
+### 实施计划（供 Codex 执行）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase1.md` — Phase 1：VoI 调度器 + 原型
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase2.md` — Phase 2：完整 SafeComm-VoI（HOCBF-QP + 双约束）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase3.md` — Phase 3：PyBullet + 域随机化
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase4.md` — Phase 4：多任务 + N≥8 扩展

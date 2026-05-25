@@ -24,9 +24,10 @@
 
 ### 1.2 现有 Gap
 
-- **Safe MARL**（MACPO、MAPPO-Lag 等）：通常假设安全相关状态全局可获得，不处理通信预算约束
-- **Comm-MARL**（DGN、SchedNet 等）：调度通信链路以优化任务，不处理安全约束
-- 两类约束的联合优化是 NeurIPS/ICML/ICLR 层面的实质性开放问题
+- **Safe MARL**（MACPO、MAPPO-Lag、Safe Dec-PG、k-hop safe MARL 等）：已经覆盖约束优化、去中心化或局部通信半径建模，但通常把通信图、邻域或可见状态作为给定条件，不直接优化硬预算下“哪条安全相关消息最值得发送”
+- **Comm-MARL**（SchedNet、TarMAC、DGN、MAGIC、VBC、MASIA 等）：已经覆盖通信调度、目标接收者、动态图拓扑、消息压缩和邻域聚合，但通信价值主要由任务回报、协作效率或信息冗余诱导，不显式处理安全成本、CBF margin 或约束违反风险
+- **CBF / shielding / MPC safety filter**：为执行层安全过滤提供强证据，但安全结论依赖动力学模型、状态观测、可行性和及时邻居信息；通信调度只能改善这些信息前提，不能自动继承完整硬安全保证
+- **核验后 Gap**：在本次核验覆盖的代表性文献中，尚未发现同时处理“显式安全约束 + 硬通信预算 + 安全感知 VoI 通信选择 + 多 UAV 编队验证”的统一框架。SafeComm-VoI 的创新点应落在安全风险如何改变通信价值，以及通信缺失如何影响安全过滤可行性。
 
 ### 1.3 三项核心贡献
 
@@ -193,7 +194,10 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 | **SafeComm-RandomTopK** | **完整三层安全** | **Random TopK k** | **调度器消融** |
 | **SafeComm-VoI** | **完整三层安全** | **VoI-TopK k** | **主方法** |
 
-不引用 Liu NeurIPS 2023（可疑）和 Qin RA-L 2023（未核验）。
+引用边界：
+- 删除旧报告中的 Liu NeurIPS 2023 confidence-weighted communication、DC2、Qin RA-L 2023/MACBF 等未核验条目；不作为 baseline 或 Related Work 锚点。
+- Qin et al. ICLR 2021 decentralized neural barrier certificates、Zhang et al. CoRL 2023 graph CBF、Liu et al. Information Sciences 2025 safety attention 可作为“危险邻居/局部图安全信息重要”的间接证据，但不等价于 SafeComm 的 HOCBF-QP 或通信调度 baseline。
+- HOCBF-PPO 作为自实现 baseline：公式来自 CBF-QP/HOCBF 文献，代码应按本项目双积分器动力学重新实现，避免把 neural CBF 仓库当作直接替代。
 
 ### 5.2 主结果表指标
 
@@ -227,7 +231,32 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 
 ---
 
-## 6. 实施阶段路线图
+## 6. 文献开源代码参照矩阵
+
+本节只定义“可参考什么”和“不能直接继承什么”。除 MIT/Apache 等许可证明确且接口合适的仓库外，不复制外部实现；优先在本仓库中按 SafeComm-VoI 的数据结构重写最小可测版本，并在注释或文档中标明参考来源。仓库可用性和许可证于 2026-05-26 通过 GitHub API/官方页面核查；实现前仍需固定 commit hash。
+
+| SafeComm 模块 | 可参考仓库 | 借鉴方式 | 边界 |
+|---|---|---|---|
+| MAPPO 主干、CTDE rollout、PPO clip | [`marlbenchmark/on-policy`](https://github.com/marlbenchmark/on-policy)（MAPPO official，MIT） | 参考 actor/critic 更新、GAE、mini-batch 训练和评估脚本组织 | 本项目已有轻量 `ppo_utils.py`，先补齐缺口，不整体迁移复杂 runner |
+| MACPO / MAPPO-Lag baseline | [`chauncygu/Multi-Agent-Constrained-Policy-Optimisation`](https://github.com/chauncygu/Multi-Agent-Constrained-Policy-Optimisation)（MACPO/MAPPO-L，license 未标准化） | 参考约束马尔可夫博弈接口、cost critic、Lagrangian baseline 指标 | 不直接复制代码；若要复用片段，需先确认许可证 |
+| Safe RL 指标和算法协议 | [`PKU-Alignment/safety-gymnasium`](https://github.com/PKU-Alignment/safety-gymnasium)、[`PKU-Alignment/Safe-Policy-Optimization`](https://github.com/PKU-Alignment/Safe-Policy-Optimization)（Apache-2.0） | 参考 cost return、CVR、safe RL logging、checkpoint/eval protocol | Safety Gymnasium 不是 UAV 通信环境；仅借鉴指标和工程协议 |
+| VoI/Scheduler 接口 | [`rhoowd/sched_net`](https://github.com/rhoowd/sched_net)（SchedNet，license 缺失） | 参考“共享信道 + 谁获得通信权”的训练/评估拆分 | SafeComm 调度器是构造式 TopK + safety/AoI priority，不复用其学习式调度代码 |
+| 图通信和注意力聚合 | [`CORE-Robotics-Lab/MAGIC`](https://github.com/CORE-Robotics-Lab/MAGIC)（MIT）、[`nsidn98/InforMARL`](https://github.com/nsidn98/InforMARL)（MIT）、[`PKU-RL/DGN`](https://github.com/PKU-RL/DGN)（license 缺失） | 参考动态图邻接、GAT/message processor、局部聚合和 N 扩展实验 | DGN 无明确许可证，只作结构参考；多跳图传播不得破坏 `|E_t| <= k` 的执行期通信语义 |
+| Phase 4 Transformer/scalable critic | [`PKU-MARL/Multi-Agent-Transformer`](https://github.com/PKU-MARL/Multi-Agent-Transformer)（license 缺失） | 参考 centralized training 中序列化 agents 的 critic/actor 结构 | 仅作为 Phase 4 候选；不在 Phase 1-2 引入复杂 Transformer 依赖 |
+| HOCBF-QP / neural CBF 参照 | [`MIT-REALM/macbf`](https://github.com/MIT-REALM/macbf)、[`MIT-REALM/gcbfplus`](https://github.com/MIT-REALM/gcbfplus)（MIT） | 参考多智能体局部图、barrier residual、危险邻居评估和可视化指标 | SafeComm 主安全层仍用手工 HOCBF-QP；neural/graph CBF 不替代本项目 per-agent QP |
+| PyBullet UAV 环境 | [`learnsyslab/gym-pybullet-drones`](https://github.com/learnsyslab/gym-pybullet-drones)（MIT） | Phase 3 首选依赖；封装为 `PyBulletUAVEnv`，复用多机 quadrotor dynamics/RL API | 不复制环境内部代码；通过依赖或 wrapper 集成，并固定 commit/version |
+| 安全控制 benchmark / 扰动协议 | [`learnsyslab/safe-control-gym`](https://github.com/learnsyslab/safe-control-gym)（MIT） | 参考 constraint/disturbance 配置、quadrotor safe-control logging、seed 管理 | 不作为 SafeComm 主环境，避免任务定义偏离多 UAV 通信调度 |
+| 高保真/视觉仿真 | [`uzh-rpg/flightmare`](https://github.com/uzh-rpg/flightmare)（custom/other license，C++/Unity） | 作为 Phase 4 之后候选，用于视觉或大规模并行 quadrotor 仿真 | 不进入 Phase 3 默认路线；许可证、构建复杂度和接口成本较高 |
+| 多目标基准 | [`Farama-Foundation/momaland`](https://github.com/Farama-Foundation/momaland)（GPL-3.0） | 参考多目标/多智能体 benchmark 文档结构和指标组织 | GPL-3.0 有传染性风险；不 vendoring，不复制实现到本仓库 |
+
+优先级建议：
+1. **可直接作为依赖或工程参考**：`gym-pybullet-drones`、`safe-control-gym`、`marlbenchmark/on-policy`、`MAGIC`、`InforMARL`、`macbf/gcbfplus`。
+2. **只作算法结构参考**：MACPO repo、SchedNet、DGN、MAT、Flightmare。
+3. **只作评估/写作参考**：MOMAland、Safety Gymnasium/SafePO 的非 UAV benchmark 设计。
+
+---
+
+## 7. 实施阶段路线图
 
 ### Phase 1：Scheduler + MAPPO-Lag Prototype
 
@@ -239,6 +268,11 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 - MAPPO（H=2 注意力）+ 单层 Lagrangian（$\lambda_s$）
 - configs/default.yaml + train.py
 - 完整测试套件
+
+**可参考代码**：
+- MAPPO/GAE/PPO 训练流程参考 `marlbenchmark/on-policy`，但保持本项目轻量实现和现有测试接口。
+- 调度器接口可参考 SchedNet 的通信预算实验拆分；调度准则必须使用本项目显式 `priority_{ij}`，不引入学习式 scheduler。
+- 注意力聚合可参考 MAGIC/InforMARL 的邻接 mask 和局部消息聚合方式；Phase 1 只实现最小 H=2 聚合与均值/单头消融接口。
 
 **成功标准**：pytest 全部通过；每步 $|E_t| \leq k$；$\lambda_s$ 更新方向正确；$\beta=0$ vs. $\beta>0$ 调度差异可见
 
@@ -254,19 +288,40 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 - N=4–8 扩展，主表 + 消融表，Shield Independence Eval
 - evaluate.py（支持 with/without QP 两种模式）
 
+**可参考代码**：
+- MACPO/MAPPO-Lag 仅参考 `chauncygu/Multi-Agent-Constrained-Policy-Optimisation` 的算法结构和指标，不直接复制代码。
+- HOCBF-QP 使用本项目 double-integrator 公式自实现；QP 后端优先 `osqp` 或 `cvxpy`，并用单元测试覆盖单约束、多约束、slack 激活和不可行退化。
+- `macbf/gcbfplus` 只用于理解 graph/neural barrier 的局部邻居建模、barrier residual 诊断和可视化；不替换 HOCBF-QP。
+- DGN+MAPPO baseline 参考 DGN 的邻接图/图卷积思想，代码按本项目网络接口重写，避免无许可证代码迁移。
+
 **成功标准**：SafeComm-VoI 在 FE/Collision/CVR 上优于全部 baseline；RandomTopK 差于 VoI；消融显示 intervention rate 降低
 
 ### Phase 3：PyBullet + Domain Randomization
 
-域随机化：位置噪声 $\sigma=0.03$ m，通信延迟 0–40 ms，丢包率 0–30%。
+**目标**：把 Phase 2 的双积分器结论迁移到更真实的四旋翼动力学和通信扰动压力测试。
+
+**环境路线**：
+- 首选 `gym-pybullet-drones` 作为 Phase 3 外部依赖或 wrapper 对象，新增 `envs/pybullet_uav_env.py` 适配本项目 `reset/step/get_state/get_phys_edges` 接口。
+- `safe-control-gym` 用作约束、扰动、随机种子和安全控制日志协议参考，不作为主环境替代。
+- Flightmare 仅作为后续视觉/高保真候选，不进入 Phase 3 默认依赖。
+
+**域随机化原则**：
+- 文献只支持随机化维度，不支持旧报告中的固定精确范围。候选维度包括质量/惯量、推力或电机响应、传感噪声、相对定位误差、风扰、下洗交互、通信延迟、丢包、乱序/异步和预算抖动。
+- 默认配置先使用保守 sweep，并把每个范围写入 `configs/phase3_pybullet.yaml`；范围必须通过消融或平台规格校准后才能在论文中作为实验设置报告。
+- 通信扰动不再写成“某论文推荐参数”。延迟、丢包和乱序只作为工程压力测试维度，报告 FE、Collision、CVR、MPS、intervention rate 和 QP slack 退化曲线。
 
 ### Phase 4（可选）
 
 多任务（围捕、覆盖）、N ≥ 8 大规模扩展。
 
+**可参考代码**：
+- `InforMARL` 支持局部信息聚合和 3/7/10/15 agents 扩展证据，可参考其规模迁移评估协议。
+- MAT 只作为 scalable critic / sequence-modeling 候选，不作为 Phase 4 必选项。
+- MOMAland 只参考多目标多智能体 benchmark 的指标组织；由于 GPL-3.0，不复制实现。
+
 ---
 
-## 7. 风险与开放假设
+## 8. 风险与开放假设
 
 | 风险 | 严重性 | 缓解策略 |
 |------|--------|---------|
@@ -276,8 +331,12 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 | HOCBF 理论假设在 stale 通信下过强 | 中 | 降级为条件式结论；实验补充违反频率 |
 | MGDA 两次 backward 开销 | 低 | 仅在 $\lambda > \text{threshold}$ 时激活 |
 | PyBullet 与双积分器动力学 gap | 中 | Phase 3 逐步推进，DR 参数保守起步 |
+| 外部仓库许可证或接口不匹配 | 中 | 只直接依赖 MIT/Apache 等明确许可仓库；无许可证/GPL/custom 仓库只作结构参考，不复制代码 |
+| 从文献外推固定随机化参数 | 中 | 把参数写成实验配置和压力测试维度，通过平台规格、消融或系统辨识校准 |
+| 图聚合破坏硬通信语义 | 中 | 执行期只允许 `E_t` 内消息；多跳/Transformer 结构仅用于训练期 critic 或明确标注的消融 |
 
 **开放假设**：
 - $\hat{p}_j, \hat{v}_j$ 使用最近通信时刻值，假设仅在 $E_t$ 激活时更新
 - 集中式 Critic 在 N=4–8 可行；N > 8 需 scalable Critic
 - $C_\text{safe}$ 为碰撞指示函数（每对 pair 计数），$J_\text{task}$ 为负编队误差
+- 外部开源仓库只作为可复现工程参照；论文中若报告基线代码来源，需固定仓库 URL、commit hash、许可证和本项目改动范围
