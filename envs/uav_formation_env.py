@@ -30,7 +30,6 @@ class UAVFormationEnv:
         w_success: float = 5.0,
         success_threshold: float = 0.3,
         K_obs_neighbors: int = 4,
-        action_scale: float = 1.0,
         seed: Optional[int] = None,
     ) -> None:
         if n_agents <= 0:
@@ -58,7 +57,6 @@ class UAVFormationEnv:
         self.success_threshold = float(success_threshold)
         self.K_obs = int(K_obs_neighbors)
         self.K_obs_neighbors = self.K_obs
-        self.action_scale = float(action_scale)
 
         self.obs_dim = 6 + self.K_obs * 6
         self.act_dim = 3
@@ -98,16 +96,14 @@ class UAVFormationEnv:
         if actions.shape != (self.n_agents, self.act_dim):
             raise ValueError(f"actions must have shape {(self.n_agents, self.act_dim)}, got {actions.shape}")
 
-        exec_actions = np.nan_to_num(actions * self.action_scale, nan=0.0, posinf=self.a_max, neginf=-self.a_max)
-        exec_actions = np.clip(exec_actions, -self.a_max, self.a_max)
+        actions = np.clip(actions, -self.a_max, self.a_max)
 
         self.velocities = np.clip(
-            self.velocities + exec_actions * self.dt,
+            self.velocities + actions * self.dt,
             -self.v_max,
             self.v_max,
         ).astype(np.float32)
         self.positions = (self.positions + self.velocities * self.dt).astype(np.float32)
-        self._apply_bounds()
 
         self.t += 1
 
@@ -119,9 +115,6 @@ class UAVFormationEnv:
 
     def get_physical_graph(self) -> List[Tuple[int, int]]:
         """Return all true-position communication pairs within ``R_comm``."""
-        if self.R_comm <= 0.0:
-            return []
-
         edges: List[Tuple[int, int]] = []
         for i in range(self.n_agents):
             for j in range(i + 1, self.n_agents):
@@ -212,9 +205,3 @@ class UAVFormationEnv:
                 if dist < min_dist:
                     min_dist = dist
         return min_dist
-
-    def _apply_bounds(self) -> None:
-        before_clip = self.positions.copy()
-        self.positions = np.clip(self.positions, -self.arena_size, self.arena_size).astype(np.float32)
-        hit_bound = before_clip != self.positions
-        self.velocities[hit_bound] = 0.0
