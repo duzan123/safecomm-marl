@@ -33,12 +33,16 @@ class SafeCommVoI:
         "H",
         "n_steps",
         "batch_size",
+        "lr_actor",
+        "lr_critic",
         "k",
         "schedule_mode",
         "beta",
         "tau_ref",
         "tau_max",
         "v_max_cbf",
+        "scheduler_eps",
+        "dt",
         "d_min",
     )
 
@@ -64,6 +68,7 @@ class SafeCommVoI:
                 "obs_dim": self.obs_dim,
                 "act_dim": self.act_dim,
                 "d_min": float(getattr(env, "d_min", 0.5)),
+                "dt": float(getattr(env, "dt", 0.1)),
             }
         )
         self._validate_config(self.config)
@@ -436,7 +441,7 @@ class SafeCommVoI:
             eps=float(self.config["scheduler_eps"]),
             schedule_mode=str(self.config["schedule_mode"]),
             v_max=float(self.config["v_max_cbf"]),
-            dt=float(getattr(self.env, "dt", 0.1)),
+            dt=float(self.config["dt"]),
             beta=float(self.config["beta"]),
             tau_ref=float(self.config["tau_ref"]),
             tau_max=float(self.config["tau_max"]),
@@ -573,6 +578,8 @@ class SafeCommVoI:
             "lr_critic",
             "lr_lambda",
             "tau_ref",
+            "scheduler_eps",
+            "dt",
             "d_min",
         ]
         for key in positive_floats:
@@ -590,7 +597,6 @@ class SafeCommVoI:
             "beta",
             "tau_max",
             "v_max_cbf",
-            "scheduler_eps",
         ]
         for key in nonnegative_floats:
             value = float(config[key])
@@ -634,6 +640,7 @@ class SafeCommVoI:
             "v_max_cbf": float(getattr(env, "v_max", 0.0)),
             "schedule_mode": "safety_priority",
             "scheduler_eps": 1e-6,
+            "dt": float(getattr(env, "dt", 0.1)),
             "normalize_advantages": True,
             "seed": None,
             "verbose": False,

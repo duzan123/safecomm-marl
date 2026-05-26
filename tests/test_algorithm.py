@@ -140,6 +140,36 @@ class TestSafeCommVoI:
             os.unlink(path)
 
     @pytest.mark.parametrize(
+        "config_override,env_dt",
+        [
+            ({"lr_actor": 1e-4}, 0.1),
+            ({"lr_critic": 1e-4}, 0.1),
+            ({"scheduler_eps": 1e-5}, 0.1),
+            ({}, 0.2),
+        ],
+    )
+    def test_load_rejects_optimizer_scheduler_and_dt_mismatch(self, config_override, env_dt):
+        import tempfile
+        _, agent = make_env_and_agent()
+        agent.collect_rollout()
+        agent.update()
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            path = f.name
+        try:
+            agent.save(path)
+            env2 = UAVFormationEnv(
+                n_agents=4, d_min=0.3, dt=env_dt, max_steps=50, R_comm=5.0, seed=0
+            )
+            agent2 = SafeCommVoI(
+                env2, config={**FAST_CONFIG, **config_override}, device="cpu"
+            )
+            with pytest.raises(ValueError, match="checkpoint config"):
+                agent2.load(path)
+        finally:
+            os.unlink(path)
+
+    @pytest.mark.parametrize(
         "bad_key,bad_value",
         [
             ("n_steps", 0),
