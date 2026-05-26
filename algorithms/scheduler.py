@@ -116,6 +116,8 @@ class SafetyPriorityScheduler:
             return []
 
         if self.schedule_mode == "full":
+            # Full mode is the unlimited-communication baseline and intentionally
+            # bypasses k, including k=0.
             return edges
 
         if self.k == 0:

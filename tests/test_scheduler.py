@@ -23,6 +23,55 @@ class TestBudgetConstraint:
         active = sched.schedule(positions, [])
         assert active == []
 
+    @pytest.mark.parametrize("mode", ["safety_priority", "random"])
+    def test_budgeted_modes_return_empty_when_k_zero(self, mode):
+        sched = SafetyPriorityScheduler(n_agents=3, k=0, d_min=0.5, schedule_mode=mode)
+        positions = np.zeros((3, 3))
+        sched.reset_episode(positions)
+        active = sched.schedule(positions, [(0, 1), (1, 2)])
+        assert active == []
+
+    def test_full_mode_bypasses_k_zero_budget(self):
+        sched = SafetyPriorityScheduler(n_agents=4, k=0, d_min=0.5, schedule_mode="full")
+        positions = np.zeros((4, 3))
+        phys_edges = [(0, 1), (1, 2), (2, 3)]
+        sched.reset_episode(positions)
+        active = sched.schedule(positions, phys_edges)
+        assert active == phys_edges
+
+    def test_topk_returns_all_edges_when_k_covers_graph(self):
+        sched = SafetyPriorityScheduler(n_agents=4, k=10, d_min=0.5)
+        positions = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+        ], dtype=np.float64)
+        phys_edges = [(0, 1), (0, 2), (2, 3)]
+        sched.reset_episode(positions)
+        active = sched.schedule(positions, phys_edges)
+        assert len(active) == len(phys_edges)
+        assert set(active) == set(phys_edges)
+
+    def test_random_mode_respects_k_and_seed(self):
+        positions = np.zeros((5, 3))
+        phys_edges = [(i, j) for i in range(5) for j in range(i + 1, 5)]
+        sched_a = SafetyPriorityScheduler(
+            n_agents=5, k=3, d_min=0.5, schedule_mode="random", seed=123
+        )
+        sched_b = SafetyPriorityScheduler(
+            n_agents=5, k=3, d_min=0.5, schedule_mode="random", seed=123
+        )
+        sched_a.reset_episode(positions)
+        sched_b.reset_episode(positions)
+
+        active_a = sched_a.schedule(positions, phys_edges)
+        active_b = sched_b.schedule(positions, phys_edges)
+
+        assert len(active_a) <= 3
+        assert active_a == active_b
+        assert set(active_a).issubset(set(phys_edges))
+
 
 class TestVoIPriority:
     """VoI 优先级公式正确性测试（规格 §2.1）"""
@@ -121,6 +170,68 @@ class TestVoIPriority:
             sched.update_history([], positions)
         p40 = sched.compute_voi_priority(positions, [(0, 1)])[(0, 1)]
         assert abs(p40 - p30) < 1e-6
+
+
+class TestCommunicationHistory:
+    def test_schedule_does_not_mutate_history(self):
+        sched = SafetyPriorityScheduler(
+            n_agents=3, k=1, d_min=0.5, v_max=0.0, dt=0.1,
+            beta=1.0, tau_ref=1.0, tau_max=5.0,
+        )
+        positions = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ], dtype=np.float64)
+        edges = [(0, 1), (0, 2), (1, 2)]
+        sched.reset_episode(positions)
+        sched.update_history([], positions)
+
+        dt_before = dict(sched._dt_comm)
+        prios_before = sched.compute_voi_priority(positions, edges)
+
+        sched.schedule(positions, edges)
+
+        assert sched._dt_comm == dt_before
+        assert sched.compute_voi_priority(positions, edges) == prios_before
+
+    def test_update_history_resets_active_and_ages_inactive_pairs(self):
+        sched = SafetyPriorityScheduler(n_agents=3, k=1, d_min=0.5, dt=0.25)
+        positions = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ], dtype=np.float64)
+        moved_positions = positions.copy()
+        moved_positions[1] = np.array([1.5, 0.0, 0.0])
+        sched.reset_episode(positions)
+
+        sched.update_history([], positions)
+        sched.update_history([(1, 0)], moved_positions)
+
+        assert sched._dt_comm[(0, 1)] == 0.0
+        assert sched._dt_comm[(0, 2)] == pytest.approx(0.5)
+        assert sched._dt_comm[(1, 2)] == pytest.approx(0.5)
+        np.testing.assert_allclose(sched._last_pos_j[(0, 1)], moved_positions[1])
+
+
+class TestEdgeNormalization:
+    def test_reverse_and_duplicate_edges_are_normalized_for_schedule(self):
+        sched = SafetyPriorityScheduler(n_agents=3, k=5, d_min=0.5)
+        positions = np.zeros((3, 3))
+        sched.reset_episode(positions)
+
+        active = sched.schedule(positions, [(1, 0), (0, 1), (2, 1), (1, 2)])
+
+        assert len(active) == 2
+        assert set(active) == {(0, 1), (1, 2)}
+
+    def test_neighbor_lists_are_deduped_normalized_and_bidirectional(self):
+        sched = SafetyPriorityScheduler(n_agents=3, k=2, d_min=0.5)
+
+        neighbors = sched.get_neighbor_lists([(1, 0), (0, 1), (2, 1), (1, 2)])
+
+        assert neighbors == {0: [1], 1: [0, 2], 2: [1]}
 
 
 if __name__ == "__main__":
