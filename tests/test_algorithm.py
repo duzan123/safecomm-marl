@@ -139,6 +139,25 @@ class TestSafeCommVoI:
         finally:
             os.unlink(path)
 
+    def test_load_rejects_action_scale_mismatch(self):
+        import tempfile
+        _, agent = make_env_and_agent()
+        agent.collect_rollout()
+        agent.update()
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            path = f.name
+        try:
+            agent.save(path)
+            env2 = UAVFormationEnv(n_agents=4, d_min=0.3, dt=0.1, max_steps=50, R_comm=5.0, seed=0)
+            agent2 = SafeCommVoI(
+                env2, config={**FAST_CONFIG, "action_scale": 1.0}, device="cpu"
+            )
+            with pytest.raises(ValueError, match="action_scale"):
+                agent2.load(path)
+        finally:
+            os.unlink(path)
+
     @pytest.mark.parametrize(
         "config_override,env_dt",
         [

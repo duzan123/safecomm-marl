@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 from typing import Any
 
 import yaml
@@ -12,7 +13,10 @@ from algorithms.safecomm_psched import SafeCommVoI
 from envs.uav_formation_env import UAVFormationEnv
 
 
-def load_config(path: str) -> dict[str, Any]:
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "configs" / "default.yaml"
+
+
+def load_config(path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load a YAML configuration file."""
     with open(path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -21,15 +25,33 @@ def load_config(path: str) -> dict[str, Any]:
     return cfg
 
 
+def _config_section(cfg: dict[str, Any], name: str) -> dict[str, Any]:
+    section = cfg.get(name, {})
+    if section is None:
+        return {}
+    if not isinstance(section, dict):
+        raise ValueError(f"config section '{name}' must be a mapping")
+    return section
+
+
+def _mutable_config_section(cfg: dict[str, Any], name: str) -> dict[str, Any]:
+    if name not in cfg or cfg[name] is None:
+        cfg[name] = {}
+    section = cfg[name]
+    if not isinstance(section, dict):
+        raise ValueError(f"config section '{name}' must be a mapping")
+    return section
+
+
 def flatten_config(cfg: dict[str, Any]) -> dict[str, Any]:
     """Flatten nested YAML sections into the config expected by SafeCommVoI."""
-    env_cfg = cfg.get("env", {})
-    comm_cfg = cfg.get("comm", {})
-    network_cfg = cfg.get("network", {})
-    ppo_cfg = cfg.get("ppo", {})
-    lr_cfg = cfg.get("lr", {})
-    safety_cfg = cfg.get("safety", {})
-    training_cfg = cfg.get("training", {})
+    env_cfg = _config_section(cfg, "env")
+    comm_cfg = _config_section(cfg, "comm")
+    network_cfg = _config_section(cfg, "network")
+    ppo_cfg = _config_section(cfg, "ppo")
+    lr_cfg = _config_section(cfg, "lr")
+    safety_cfg = _config_section(cfg, "safety")
+    training_cfg = _config_section(cfg, "training")
 
     return {
         "k": comm_cfg.get("k", 4),
@@ -67,27 +89,27 @@ def flatten_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
-    cfg.setdefault("env", {})
-    cfg.setdefault("comm", {})
-    cfg.setdefault("training", {})
+    env_cfg = _mutable_config_section(cfg, "env")
+    comm_cfg = _mutable_config_section(cfg, "comm")
+    training_cfg = _mutable_config_section(cfg, "training")
 
     if args.n_agents is not None:
-        cfg["env"]["n_agents"] = args.n_agents
+        env_cfg["n_agents"] = args.n_agents
     if args.k is not None:
-        cfg["comm"]["k"] = args.k
+        comm_cfg["k"] = args.k
     if args.beta is not None:
-        cfg["comm"]["beta"] = args.beta
+        comm_cfg["beta"] = args.beta
     if args.total_steps is not None:
-        cfg["training"]["total_steps"] = args.total_steps
+        training_cfg["total_steps"] = args.total_steps
     if args.seed is not None:
-        cfg["env"]["seed"] = args.seed
-        cfg["training"]["seed"] = args.seed
+        env_cfg["seed"] = args.seed
+        training_cfg["seed"] = args.seed
     if args.device is not None:
-        cfg["training"]["device"] = args.device
+        training_cfg["device"] = args.device
 
 
 def _build_env(cfg: dict[str, Any]) -> UAVFormationEnv:
-    env_cfg = cfg.get("env", {})
+    env_cfg = _config_section(cfg, "env")
     return UAVFormationEnv(
         n_agents=env_cfg.get("n_agents", 4),
         dt=env_cfg.get("dt", 0.1),
@@ -109,7 +131,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train SafeComm-VoI Phase 1 for UAV formation MARL."
     )
-    parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH))
     parser.add_argument("--n_agents", type=int, default=None)
     parser.add_argument("--k", type=int, default=None)
     parser.add_argument("--beta", type=float, default=None)
@@ -125,13 +147,19 @@ def main() -> None:
     cfg = load_config(args.config)
     _apply_cli_overrides(cfg, args)
 
-    training_cfg = cfg.get("training", {})
+    checkpoint_path = None
+    if args.checkpoint is not None:
+        checkpoint_path = Path(args.checkpoint)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
+
+    training_cfg = _config_section(cfg, "training")
     env = _build_env(cfg)
     device = training_cfg.get("device", "auto")
     agent = SafeCommVoI(env, config=flatten_config(cfg), device=device)
 
-    if args.checkpoint and os.path.exists(args.checkpoint):
-        agent.load(args.checkpoint)
+    if checkpoint_path is not None:
+        agent.load(checkpoint_path)
 
     metrics = agent.train(total_steps=training_cfg.get("total_steps", 1000000))
 

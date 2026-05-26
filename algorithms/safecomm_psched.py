@@ -33,6 +33,7 @@ class SafeCommVoI:
         "H",
         "n_steps",
         "batch_size",
+        "action_scale",
         "lr_actor",
         "lr_critic",
         "k",
