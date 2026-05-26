@@ -17,6 +17,20 @@ class TestRolloutBuffer:
         return RolloutBuffer(n_steps=20, n_agents=3, obs_dim=12,
                              act_dim=3, global_state_dim=36)
 
+    def _add_zero_step(self, buf, reward=0.1, cost=0.0, done=False):
+        buf.add(
+            obs=np.zeros((3, 12)),
+            actions=np.zeros((3, 3)),
+            log_probs=np.zeros(3),
+            rewards=[reward] * 3,
+            costs=[cost] * 3,
+            value=0.5,
+            cost_value=0.1,
+            done=done,
+            global_state=np.zeros(36),
+            adj_matrix=np.eye(3),
+        )
+
     def test_add_and_ptr(self):
         buf = self._make_buffer()
         for t in range(5):
@@ -45,13 +59,20 @@ class TestRolloutBuffer:
     def test_get_training_data_keys(self):
         buf = self._make_buffer()
         for _ in range(10):
-            buf.add(np.zeros((3,12)), np.zeros((3,3)), np.zeros(3),
-                    [0.1]*3, [0.0]*3, 0.5, 0.1, False, np.zeros(36), np.eye(3))
+            self._add_zero_step(buf)
         buf.finish_rollout(0.4, 0.1)
         data = buf.get_training_data(gamma=0.99, lam=0.95, device="cpu")
         for key in ["obs","actions","log_probs_old","advantages","returns",
                     "cost_advantages","cost_returns","global_states","adj_matrices"]:
             assert key in data
+        assert data["obs"].shape == (10, 3, 12)
+        assert data["actions"].shape == (10, 3, 3)
+        assert data["log_probs_old"].shape == (10, 3)
+        assert data["advantages"].shape == (10,)
+        assert data["returns"].shape == (10,)
+        assert data["adj_matrices"].shape == (10, 3, 3)
+        assert data["obs"].dtype == torch.float32
+        assert data["dones"].dtype == torch.bool
 
     def test_advantages_normalized(self):
         buf = self._make_buffer()
@@ -64,6 +85,50 @@ class TestRolloutBuffer:
         adv = data["advantages"].numpy()
         assert abs(adv.mean()) < 0.1
         assert abs(adv.std() - 1.0) < 0.1
+
+    def test_get_training_data_requires_finish_rollout(self):
+        buf = self._make_buffer()
+        self._add_zero_step(buf)
+        with pytest.raises(RuntimeError):
+            buf.get_training_data()
+
+    def test_reset_allows_repeated_rollouts(self):
+        buf = self._make_buffer()
+        self._add_zero_step(buf, reward=1.0)
+        buf.finish_rollout(0.0, 0.0)
+        first = buf.get_training_data()
+        assert first["obs"].shape[0] == 1
+
+        buf.reset()
+        assert buf.ptr == 0
+        self._add_zero_step(buf, reward=2.0, done=True)
+        buf.finish_rollout(0.0, 0.0)
+        second = buf.get_training_data()
+        assert buf.ptr == 1
+        assert second["obs"].shape[0] == 1
+        assert second["rewards"][0, 0].item() == pytest.approx(2.0)
+
+    def test_reset_clears_finished_state(self):
+        buf = self._make_buffer()
+        self._add_zero_step(buf)
+        buf.finish_rollout(0.0, 0.0)
+        buf.reset()
+        self._add_zero_step(buf)
+        with pytest.raises(RuntimeError):
+            buf.get_training_data()
+
+    def test_capacity_exceeded_raises(self):
+        buf = RolloutBuffer(n_steps=1, n_agents=3, obs_dim=12,
+                            act_dim=3, global_state_dim=36)
+        self._add_zero_step(buf)
+        with pytest.raises(RuntimeError):
+            self._add_zero_step(buf)
+
+    def test_shape_mismatch_raises(self):
+        buf = self._make_buffer()
+        with pytest.raises(ValueError):
+            buf.add(np.zeros((3,11)), np.zeros((3,3)), np.zeros(3),
+                    [0.1]*3, [0.0]*3, 0.5, 0.1, False, np.zeros(36), np.eye(3))
 
 
 class TestComputeGAE:
@@ -81,9 +146,8 @@ class TestComputeGAE:
         values = np.zeros(4)
         dones = np.array([False, True, False])
         adv, ret = compute_gae(rewards, values, dones, gamma=0.99, lam=0.95)
-        # After done at t=1, GAE for t=2 should not propagate from t=0
-        assert adv[2] > 0.0
-        assert abs(adv[1]) < 1.0  # done at t=1: adv[1] = reward[1] + 0 - value[1] = 0
+        np.testing.assert_allclose(adv, np.array([1.0, 0.0, 1.0], dtype=np.float32))
+        np.testing.assert_allclose(ret, np.array([1.0, 0.0, 1.0], dtype=np.float32))
 
 
 class TestPPOLoss:
@@ -108,6 +172,18 @@ class TestPPOLoss:
         returns = torch.tensor([2.0, 3.0, 4.0])
         loss = value_loss(pred, old, returns, clip_eps=0.2)
         assert float(loss) >= 0.0
+
+    def test_value_loss_column_vectors_match_flat_vectors(self):
+        pred_col = torch.tensor([[1.5], [2.5], [3.5]])
+        old_col = torch.tensor([[1.0], [2.0], [3.0]])
+        returns = torch.tensor([2.0, 3.0, 4.0])
+        column_loss = value_loss(pred_col, old_col, returns, clip_eps=0.2)
+        flat_loss = value_loss(pred_col.squeeze(-1), old_col.squeeze(-1), returns, clip_eps=0.2)
+        assert float(column_loss) == pytest.approx(float(flat_loss), abs=1e-6)
+
+    def test_value_loss_shape_mismatch_raises_value_error(self):
+        with pytest.raises(ValueError):
+            value_loss(torch.zeros(3, 1), torch.zeros(3), torch.zeros(2))
 
 
 class TestExplainedVariance:

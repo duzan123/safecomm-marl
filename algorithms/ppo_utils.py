@@ -78,6 +78,19 @@ def value_loss(
     use_clip: bool = True,
 ) -> torch.Tensor:
     """Return PPO value loss with optional value clipping."""
+    values_pred = torch.as_tensor(values_pred).reshape(-1)
+    values_old = torch.as_tensor(
+        values_old, dtype=values_pred.dtype, device=values_pred.device
+    ).reshape(-1)
+    returns = torch.as_tensor(
+        returns, dtype=values_pred.dtype, device=values_pred.device
+    ).reshape(-1)
+    if values_pred.shape != values_old.shape or values_pred.shape != returns.shape:
+        raise ValueError(
+            "values_pred, values_old, and returns must have matching flattened "
+            f"shapes, got {values_pred.shape}, {values_old.shape}, and {returns.shape}"
+        )
+
     if not use_clip:
         return 0.5 * torch.mean((values_pred - returns) ** 2)
 
@@ -155,6 +168,7 @@ class RolloutBuffer:
         self.act_dim = act_dim
         self.global_state_dim = global_state_dim
         self.ptr = 0
+        self._finished = False
 
         self.obs = np.zeros((n_steps, n_agents, obs_dim), dtype=np.float32)
         self.actions = np.zeros((n_steps, n_agents, act_dim), dtype=np.float32)
@@ -208,12 +222,22 @@ class RolloutBuffer:
         self.dones[self.ptr] = bool(done)
         self.global_states[self.ptr] = global_state_arr
         self.adj_matrices[self.ptr] = adj_matrix_arr
+        self._finished = False
         self.ptr += 1
 
     def finish_rollout(self, last_value: float, last_cost_value: float) -> None:
         """Write bootstrap values at the current rollout end."""
         self.values[self.ptr] = self._finite_scalar(last_value, "last_value")
         self.cost_values[self.ptr] = self._finite_scalar(last_cost_value, "last_cost_value")
+        self._finished = True
+
+    def reset(self) -> None:
+        """Clear rollout write state before collecting a new rollout."""
+        self.ptr = 0
+        self._finished = False
+        self.values.fill(0.0)
+        self.cost_values.fill(0.0)
+        self.dones.fill(False)
 
     def compute_advantages_and_returns(
         self,
@@ -253,6 +277,8 @@ class RolloutBuffer:
     ) -> dict[str, torch.Tensor]:
         """Return rollout tensors for PPO updates."""
         n = self.ptr
+        if n > 0 and not self._finished:
+            raise RuntimeError("finish_rollout() must be called before get_training_data()")
         adv_data = self.compute_advantages_and_returns(
             gamma=gamma, lam=lam, normalize_advantages=normalize_advantages
         )
