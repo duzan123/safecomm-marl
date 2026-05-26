@@ -212,5 +212,25 @@ class TestSafeCommVoI:
         assert "success_rate" in metrics
 
 
+def test_phase1_smoke():
+    """端对端 Phase 1 冒烟测试：完整 rollout → update → evaluate 流程"""
+    env = UAVFormationEnv(n_agents=4, d_min=0.3, dt=0.1, max_steps=50, R_comm=5.0, seed=0)
+    agent = SafeCommVoI(env, config=FAST_CONFIG, device="cpu")
+
+    rollout_info = agent.collect_rollout()
+    assert agent.buffer.ptr == FAST_CONFIG["n_steps"]
+    assert "mean_episode_cost" in rollout_info
+
+    update_metrics = agent.update()
+    assert "actor_loss" in update_metrics
+    assert "lambda_s" in update_metrics
+    assert "J_safe" in update_metrics
+    assert float(update_metrics["lambda_s"]) >= 0.0
+
+    eval_metrics = agent.evaluate(n_episodes=2)
+    assert "mean_formation_error" in eval_metrics
+    assert "success_rate" in eval_metrics
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
