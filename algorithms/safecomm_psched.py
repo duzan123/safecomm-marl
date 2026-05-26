@@ -24,6 +24,24 @@ class SafeCommVoI:
     rollout path. The policy action is scaled and sent directly to the env.
     """
 
+    _CHECKPOINT_CONFIG_KEYS = (
+        "n_agents",
+        "obs_dim",
+        "act_dim",
+        "msg_dim",
+        "hidden_dims",
+        "H",
+        "n_steps",
+        "batch_size",
+        "k",
+        "schedule_mode",
+        "beta",
+        "tau_ref",
+        "tau_max",
+        "v_max_cbf",
+        "d_min",
+    )
+
     def __init__(
         self,
         env: Any,
@@ -40,6 +58,15 @@ class SafeCommVoI:
         defaults = self._default_config(env)
         self.config = {**defaults, **(config or {})}
         self.config["hidden_dims"] = list(self.config["hidden_dims"])
+        self.config.update(
+            {
+                "n_agents": self.n_agents,
+                "obs_dim": self.obs_dim,
+                "act_dim": self.act_dim,
+                "d_min": float(getattr(env, "d_min", 0.5)),
+            }
+        )
+        self._validate_config(self.config)
 
         seed = self.config.get("seed")
         if seed is not None:
@@ -199,6 +226,8 @@ class SafeCommVoI:
         n_epochs = int(self.config["n_epochs"])
 
         actor_losses: list[float] = []
+        ppo_actor_losses: list[float] = []
+        safety_losses: list[float] = []
         critic_losses: list[float] = []
         entropies: list[float] = []
         approx_kls: list[float] = []
@@ -266,6 +295,8 @@ class SafeCommVoI:
                 self.critic_optimizer.step()
 
                 actor_losses.append(float(total_actor_loss.detach().cpu()))
+                ppo_actor_losses.append(float(actor_loss.detach().cpu()))
+                safety_losses.append(float(safety_loss.detach().cpu()))
                 critic_losses.append(float(critic_loss.detach().cpu()))
                 entropies.append(float(entropy_mean.detach().cpu()))
                 approx_kls.append(float(approx_kl.detach().cpu()))
@@ -285,6 +316,9 @@ class SafeCommVoI:
 
         return {
             "actor_loss": float(np.mean(actor_losses)) if actor_losses else 0.0,
+            "total_actor_loss": float(np.mean(actor_losses)) if actor_losses else 0.0,
+            "ppo_actor_loss": float(np.mean(ppo_actor_losses)) if ppo_actor_losses else 0.0,
+            "safety_loss": float(np.mean(safety_losses)) if safety_losses else 0.0,
             "critic_loss": float(np.mean(critic_losses)) if critic_losses else 0.0,
             "entropy": float(np.mean(entropies)) if entropies else 0.0,
             "approx_kl": float(np.mean(approx_kls)) if approx_kls else 0.0,
@@ -381,15 +415,13 @@ class SafeCommVoI:
     def load(self, path: str | os.PathLike[str]) -> None:
         """Restore a checkpoint saved by :meth:`save`."""
         checkpoint = torch.load(os.fspath(path), map_location=self.device)
+        self._validate_checkpoint_config(checkpoint.get("config"))
         self.networks.load_state_dict(checkpoint["network_state"])
         self.actor_optimizer.load_state_dict(checkpoint["actor_optimizer_state"])
         self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer_state"])
         self.lambda_s = float(checkpoint["lambda_s"])
         self.n_iterations = int(checkpoint.get("n_iterations", 0))
         self.total_steps = int(checkpoint.get("total_steps", 0))
-        self.config = {**self.config, **dict(checkpoint.get("config", {}))}
-        self.config["hidden_dims"] = list(self.config["hidden_dims"])
-        self.scheduler = self._build_scheduler()
 
     def _reset_env_and_scheduler(self) -> tuple[list[np.ndarray], dict[str, Any]]:
         obs_list, info = self.env.reset()
@@ -400,7 +432,7 @@ class SafeCommVoI:
         return SafetyPriorityScheduler(
             n_agents=self.n_agents,
             k=int(self.config["k"]),
-            d_min=float(getattr(self.env, "d_min", 0.5)),
+            d_min=float(self.config["d_min"]),
             eps=float(self.config["scheduler_eps"]),
             schedule_mode=str(self.config["schedule_mode"]),
             v_max=float(self.config["v_max_cbf"]),
@@ -464,6 +496,111 @@ class SafeCommVoI:
         if str(device) == "auto":
             return torch.device("cuda" if torch.cuda.is_available() else "cpu")
         return torch.device(device)
+
+    def _validate_checkpoint_config(self, checkpoint_config: Any) -> None:
+        if not isinstance(checkpoint_config, dict):
+            raise ValueError("checkpoint config must be present and must be a dict")
+        missing = [
+            key for key in self._CHECKPOINT_CONFIG_KEYS if key not in checkpoint_config
+        ]
+        if missing:
+            raise ValueError(
+                "checkpoint config missing required keys: " + ", ".join(missing)
+            )
+
+        for key in self._CHECKPOINT_CONFIG_KEYS:
+            expected = self._canonical_config_value(key, self.config[key])
+            actual = self._canonical_config_value(key, checkpoint_config[key])
+            if actual != expected:
+                raise ValueError(
+                    "checkpoint config mismatch for "
+                    f"{key}: checkpoint={checkpoint_config[key]!r}, current={self.config[key]!r}"
+                )
+
+    @classmethod
+    def _canonical_config_value(cls, key: str, value: Any) -> Any:
+        if key in {"hidden_dims"}:
+            return tuple(int(v) for v in value)
+        if key in {
+            "n_agents",
+            "obs_dim",
+            "act_dim",
+            "msg_dim",
+            "H",
+            "n_steps",
+            "batch_size",
+            "k",
+        }:
+            return int(value)
+        if key in {"schedule_mode"}:
+            return str(value)
+        return round(float(value), 12)
+
+    @staticmethod
+    def _validate_config(config: dict[str, Any]) -> None:
+        positive_ints = [
+            "n_agents",
+            "obs_dim",
+            "act_dim",
+            "n_steps",
+            "n_epochs",
+            "batch_size",
+            "msg_dim",
+            "H",
+        ]
+        for key in positive_ints:
+            value = config[key]
+            if isinstance(value, bool) or int(value) != value or int(value) <= 0:
+                raise ValueError(f"{key} must be a positive integer")
+
+        if isinstance(config["k"], bool) or int(config["k"]) != config["k"] or int(config["k"]) < 0:
+            raise ValueError("k must be a non-negative integer")
+
+        hidden_dims = config["hidden_dims"]
+        if not isinstance(hidden_dims, list) or not hidden_dims:
+            raise ValueError("hidden_dims must be a non-empty list")
+        for value in hidden_dims:
+            if isinstance(value, bool) or int(value) != value or int(value) <= 0:
+                raise ValueError("hidden_dims must contain positive integers")
+
+        positive_floats = [
+            "action_scale",
+            "gamma",
+            "lam",
+            "clip_eps",
+            "max_grad_norm",
+            "lr_actor",
+            "lr_critic",
+            "lr_lambda",
+            "tau_ref",
+            "d_min",
+        ]
+        for key in positive_floats:
+            value = float(config[key])
+            if not np.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{key} must be a positive finite value")
+
+        nonnegative_floats = [
+            "value_coef",
+            "cost_value_coef",
+            "entropy_coef",
+            "safety_budget",
+            "lambda_init",
+            "lambda_max",
+            "beta",
+            "tau_max",
+            "v_max_cbf",
+            "scheduler_eps",
+        ]
+        for key in nonnegative_floats:
+            value = float(config[key])
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(f"{key} must be a non-negative finite value")
+
+        if float(config["lambda_init"]) > float(config["lambda_max"]):
+            raise ValueError("lambda_init must be <= lambda_max")
+        if str(config["schedule_mode"]) not in {"safety_priority", "full", "random"}:
+            raise ValueError("schedule_mode must be one of safety_priority, full, random")
 
     @staticmethod
     def _default_config(env: Any) -> dict[str, Any]:
