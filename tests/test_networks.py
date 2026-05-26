@@ -62,11 +62,15 @@ class TestSafeCommNetworks:
         act_b = torch.tanh(torch.randn(T, N, 3))
         adj_b = torch.ones(T, N, N) - torch.eye(N).unsqueeze(0)
         gs_b = torch.randn(T, N * obs_dim)
-        log_probs, _, values, _, _ = nets.evaluate_actions_batch(obs_b, act_b, adj_b, gs_b)
-        loss = -log_probs.mean() + values.mean()
+        log_probs, _, values, cost_values, _ = nets.evaluate_actions_batch(obs_b, act_b, adj_b, gs_b)
+        loss = -log_probs.mean() + values.mean() + cost_values.mean()
         loss.backward()
-        grad_found = any(p.grad is not None for p in nets.parameters())
-        assert grad_found
+        assert nets.actor.log_sigma.grad is not None
+        assert any(p.grad is not None for p in nets.actor.net.parameters())
+        assert any(p.grad is not None for p in nets.encoder.parameters())
+        assert any(p.grad is not None for p in nets.aggregator.parameters())
+        assert any(p.grad is not None for p in nets.critic.parameters())
+        assert any(p.grad is not None for p in nets.cost_critic.parameters())
 
     def test_deterministic_vs_stochastic(self):
         nets = make_nets()
@@ -84,6 +88,20 @@ class TestSafeCommNetworks:
         named_log_sigma = [name for name, _ in nets.named_parameters() if name.endswith("log_sigma")]
         assert named_log_sigma == ["actor.log_sigma"]
 
+    def test_act_does_not_move_module(self, monkeypatch):
+        nets = make_nets()
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("act() must not call module.to()")
+
+        monkeypatch.setattr(nets, "to", fail_if_called)
+        obs_list = [np.random.rand(30).astype(np.float32) for _ in range(4)]
+        nbr = {i: [j for j in range(4) if j != i] for i in range(4)}
+
+        actions, _, _, _ = nets.act(obs_list, nbr, device="cpu")
+
+        assert actions.shape == (4, 3)
+
     def test_get_values_pads_and_trims_global_state(self):
         nets = make_nets(n=4, obs_dim=30)
         short_gs = torch.randn(2, 117)
@@ -96,6 +114,17 @@ class TestSafeCommNetworks:
         assert short_costs.shape == (2,)
         assert long_values.shape == (2,)
         assert long_costs.shape == (2,)
+
+    def test_evaluate_actions_batch_rejects_global_state_time_mismatch(self):
+        T, N, obs_dim = 8, 4, 30
+        nets = make_nets(n=N, obs_dim=obs_dim)
+        obs_b = torch.randn(T, N, obs_dim)
+        act_b = torch.tanh(torch.randn(T, N, 3))
+        adj_b = torch.ones(T, N, N) - torch.eye(N).unsqueeze(0)
+        wrong_gs_b = torch.randn(T + 1, N * obs_dim)
+
+        with pytest.raises(ValueError, match="global_states"):
+            nets.evaluate_actions_batch(obs_b, act_b, adj_b, wrong_gs_b)
 
     def test_batch_no_neighbors_returns_zero_aggregate(self):
         T, N, obs_dim = 3, 4, 30

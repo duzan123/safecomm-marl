@@ -280,8 +280,8 @@ class SafeCommNetworks(nn.Module):
         device: str | torch.device = "cpu",
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Sample or choose one action per agent and evaluate centralized critics."""
-        target_device = torch.device(device)
-        self.to(target_device)
+        _ = torch.device(device)
+        target_device = self.device
 
         obs_np = np.asarray(obs_list, dtype=np.float32)
         if obs_np.ndim != 2 or obs_np.shape[1] != self.obs_dim:
@@ -338,6 +338,17 @@ class SafeCommNetworks(nn.Module):
             )
 
         t_steps, n_agents, _ = obs_batch.shape
+        if global_states.ndim != 2:
+            raise ValueError(
+                "global_states must have shape [T, D], "
+                f"got {tuple(global_states.shape)}"
+            )
+        if global_states.shape[0] != t_steps:
+            raise ValueError(
+                "global_states first dimension must match obs_batch T "
+                f"({t_steps}), got {global_states.shape[0]}"
+            )
+
         obs_flat = obs_batch.reshape(t_steps * n_agents, self.obs_dim)
         messages = self.encoder(obs_flat).reshape(t_steps, n_agents, self.msg_dim)
         agg_msgs = self.aggregator(obs_batch, messages, adj_matrices)
@@ -348,9 +359,10 @@ class SafeCommNetworks(nn.Module):
         )
         raw_actions = self._atanh(actions_batch.reshape(t_steps * n_agents, self.act_dim))
         log_probs = self._squashed_log_prob(dist, raw_actions).reshape(t_steps, n_agents)
+        # PPO diagnostic: pre-squash Normal entropy, not exact tanh-policy entropy.
         entropy = dist.entropy().sum(dim=-1).reshape(t_steps, n_agents)
 
-        critic_input = self._prepare_global_states(global_states)
+        critic_input = self._pad_global_state(global_states)
         values = self.critic(critic_input)
         cost_values = self.cost_critic(critic_input)
 
