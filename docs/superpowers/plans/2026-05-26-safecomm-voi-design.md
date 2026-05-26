@@ -231,28 +231,27 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 
 ---
 
-## 6. 文献开源代码参照矩阵
+## 6. 外部开源代码复用决策
 
-本节只定义“可参考什么”和“不能直接继承什么”。除 MIT/Apache 等许可证明确且接口合适的仓库外，不复制外部实现；优先在本仓库中按 SafeComm-VoI 的数据结构重写最小可测版本，并在注释或文档中标明参考来源。仓库可用性和许可证于 2026-05-26 通过 GitHub API/官方页面核查；实现前仍需固定 commit hash。
+本节依据 `external/` 中已克隆的 10 个官方/主要仓库制定实现边界。CodeGraph MCP 于 2026-05-26 调用时对当前项目和这些 external 仓库均返回 0 indexed files，因此本节结论来自仓库结构、README、许可证和关键源码静态检查；实施前不依赖未生成的符号图。原则是：能作为稳定环境依赖的直接封装，能提供小型 MIT 模块的可局部借鉴，无许可证、TF1/JAX 栈差异大或与 SafeComm 贡献重叠的代码只作算法参考。
 
-| SafeComm 模块 | 可参考仓库 | 借鉴方式 | 边界 |
-|---|---|---|---|
-| MAPPO 主干、CTDE rollout、PPO clip | [`marlbenchmark/on-policy`](https://github.com/marlbenchmark/on-policy)（MAPPO official，MIT） | 参考 actor/critic 更新、GAE、mini-batch 训练和评估脚本组织 | 本项目已有轻量 `ppo_utils.py`，先补齐缺口，不整体迁移复杂 runner |
-| MACPO / MAPPO-Lag baseline | [`chauncygu/Multi-Agent-Constrained-Policy-Optimisation`](https://github.com/chauncygu/Multi-Agent-Constrained-Policy-Optimisation)（MACPO/MAPPO-L，license 未标准化） | 参考约束马尔可夫博弈接口、cost critic、Lagrangian baseline 指标 | 不直接复制代码；若要复用片段，需先确认许可证 |
-| Safe RL 指标和算法协议 | [`PKU-Alignment/safety-gymnasium`](https://github.com/PKU-Alignment/safety-gymnasium)、[`PKU-Alignment/Safe-Policy-Optimization`](https://github.com/PKU-Alignment/Safe-Policy-Optimization)（Apache-2.0） | 参考 cost return、CVR、safe RL logging、checkpoint/eval protocol | Safety Gymnasium 不是 UAV 通信环境；仅借鉴指标和工程协议 |
-| VoI/Scheduler 接口 | [`rhoowd/sched_net`](https://github.com/rhoowd/sched_net)（SchedNet，license 缺失） | 参考“共享信道 + 谁获得通信权”的训练/评估拆分 | SafeComm 调度器是构造式 TopK + safety/AoI priority，不复用其学习式调度代码 |
-| 图通信和注意力聚合 | [`CORE-Robotics-Lab/MAGIC`](https://github.com/CORE-Robotics-Lab/MAGIC)（MIT）、[`nsidn98/InforMARL`](https://github.com/nsidn98/InforMARL)（MIT）、[`PKU-RL/DGN`](https://github.com/PKU-RL/DGN)（license 缺失） | 参考动态图邻接、GAT/message processor、局部聚合和 N 扩展实验 | DGN 无明确许可证，只作结构参考；多跳图传播不得破坏 `|E_t| <= k` 的执行期通信语义 |
-| Phase 4 Transformer/scalable critic | [`PKU-MARL/Multi-Agent-Transformer`](https://github.com/PKU-MARL/Multi-Agent-Transformer)（license 缺失） | 参考 centralized training 中序列化 agents 的 critic/actor 结构 | 仅作为 Phase 4 候选；不在 Phase 1-2 引入复杂 Transformer 依赖 |
-| HOCBF-QP / neural CBF 参照 | [`MIT-REALM/macbf`](https://github.com/MIT-REALM/macbf)、[`MIT-REALM/gcbfplus`](https://github.com/MIT-REALM/gcbfplus)（MIT） | 参考多智能体局部图、barrier residual、危险邻居评估和可视化指标 | SafeComm 主安全层仍用手工 HOCBF-QP；neural/graph CBF 不替代本项目 per-agent QP |
-| PyBullet UAV 环境 | [`learnsyslab/gym-pybullet-drones`](https://github.com/learnsyslab/gym-pybullet-drones)（MIT） | Phase 3 首选依赖；封装为 `PyBulletUAVEnv`，复用多机 quadrotor dynamics/RL API | 不复制环境内部代码；通过依赖或 wrapper 集成，并固定 commit/version |
-| 安全控制 benchmark / 扰动协议 | [`learnsyslab/safe-control-gym`](https://github.com/learnsyslab/safe-control-gym)（MIT） | 参考 constraint/disturbance 配置、quadrotor safe-control logging、seed 管理 | 不作为 SafeComm 主环境，避免任务定义偏离多 UAV 通信调度 |
-| 高保真/视觉仿真 | [`uzh-rpg/flightmare`](https://github.com/uzh-rpg/flightmare)（custom/other license，C++/Unity） | 作为 Phase 4 之后候选，用于视觉或大规模并行 quadrotor 仿真 | 不进入 Phase 3 默认路线；许可证、构建复杂度和接口成本较高 |
-| 多目标基准 | [`Farama-Foundation/momaland`](https://github.com/Farama-Foundation/momaland)（GPL-3.0） | 参考多目标/多智能体 benchmark 文档结构和指标组织 | GPL-3.0 有传染性风险；不 vendoring，不复制实现到本仓库 |
+| 仓库 | 当前 commit | 许可证状态 | SafeComm 决策 | 不重写/自写边界 |
+|---|---:|---|---|---|
+| `external/gym-pybullet-drones` | `90b178a` | MIT | **直接依赖/封装** | Phase 3 不手写四旋翼动力学；封装 `MultiHoverAviary`/`VelocityAviary` 到 `PyBulletUAVEnv`，只自写 SafeComm 观测、奖励、通信图、成本和 adapter |
+| `external/on-policy` | `de66d7a` | MIT | **公式和训练流程参考** | 参考 R-MAPPO、GAE、PPO clip、CTDE rollout；不迁移复杂 runner，Phase 1 自写轻量 `ppo_utils.py` 和主类 |
+| `external/MAGIC` | `0ad3a61` | MIT | **局部借鉴** | 可借鉴 masked graph attention 和通信 mask 处理；SafeComm scheduler 必须自写，不能把 MAGIC 的 learned sub-scheduler 当作 VoI-TopK |
+| `external/InforMARL` | `7d3c42a` | MIT | **结构参考/可扩展实验参考** | 参考局部图观测、邻接矩阵和规模迁移评估；不引入旧 torch-geometric 栈到 Phase 1-2 |
+| `external/gcbfplus` | `fb44990` | MIT | **独立 baseline/CBF mask 参考** | 可参考 pairwise CBF、safe/unsafe mask、图环境诊断；主 HOCBF-QP 仍按 SafeComm double-integrator 公式自写 |
+| `external/safe-control-gym` | `6b5391d` | MIT | **扰动和安全控制协议参考** | 参考 constraint/disturbance、seed、logging；不作为主环境，避免依赖和任务定义偏离通信调度 |
+| `external/macbf` | `7e364b7` | MIT | **算法参考** | TF/Python 3.6 neural CBF，不直接并入 PyTorch 主线；只参考 barrier loss、safe/unsafe mask 和可视化诊断 |
+| `external/Multi-Agent-Constrained-Policy-Optimisation` | `b80a9f5` | MIT 文件含冲突标记 | **算法参考，不复制** | 参考 MACPO/MAPPO-Lagrangian cost critic、dual update 和 baseline 指标；因许可证文件异常和接口重，不直接复制实现 |
+| `external/sched_net` | `ffa0300` | 无明确许可证 | **只作问题设定参考** | 参考共享信道和 `k` 个通信名额的实验拆分；不复制 TF1 代码，SafeComm scheduler 自写 |
+| `external/DGN` | `92b9268` | 无明确许可证 | **只作算法结构参考** | 参考图邻接和通信受限 MARL baseline 定义；DGN+MAPPO 用本项目 PyTorch masked GAT/message passing 自写 |
 
-优先级建议：
-1. **可直接作为依赖或工程参考**：`gym-pybullet-drones`、`safe-control-gym`、`marlbenchmark/on-policy`、`MAGIC`、`InforMARL`、`macbf/gcbfplus`。
-2. **只作算法结构参考**：MACPO repo、SchedNet、DGN、MAT、Flightmare。
-3. **只作评估/写作参考**：MOMAland、Safety Gymnasium/SafePO 的非 UAV benchmark 设计。
+执行优先级：
+1. **不重写核心动力学**：Phase 3 直接封装 `gym-pybullet-drones`，本项目只写 SafeComm adapter。
+2. **重写核心贡献模块**：VoI scheduler、AoI 历史、C+ HOCBF-QP、双约束 Lagrangian-MGDA、DGN+MAPPO baseline 都按本项目接口实现。
+3. **许可证保守策略**：MIT 仓库可借鉴小型片段并保留 attribution；无许可证仓库和许可证异常仓库不复制代码；JAX/TF1 仓库不并入主训练栈。
 
 ---
 
@@ -270,9 +269,9 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 - 完整测试套件
 
 **可参考代码**：
-- MAPPO/GAE/PPO 训练流程参考 `marlbenchmark/on-policy`，但保持本项目轻量实现和现有测试接口。
-- 调度器接口可参考 SchedNet 的通信预算实验拆分；调度准则必须使用本项目显式 `priority_{ij}`，不引入学习式 scheduler。
-- 注意力聚合可参考 MAGIC/InforMARL 的邻接 mask 和局部消息聚合方式；Phase 1 只实现最小 H=2 聚合与均值/单头消融接口。
+- MAPPO/GAE/PPO 训练流程参考 `external/on-policy`，但保持本项目轻量实现和现有测试接口。
+- 调度器接口可参考 `external/sched_net` 的通信预算实验拆分；调度准则必须使用本项目显式 `priority_{ij}`，不引入学习式 scheduler，不复制无许可证 TF1 代码。
+- 注意力聚合可参考 `external/MAGIC`/`external/InforMARL` 的邻接 mask 和局部消息聚合方式；Phase 1 只实现最小 H=2 聚合与均值/单头消融接口。
 
 **成功标准**：pytest 全部通过；每步 $|E_t| \leq k$；$\lambda_s$ 更新方向正确；$\beta=0$ vs. $\beta>0$ 调度差异可见
 
@@ -289,7 +288,7 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 - evaluate.py（支持 with/without QP 两种模式）
 
 **可参考代码**：
-- MACPO/MAPPO-Lag 仅参考 `chauncygu/Multi-Agent-Constrained-Policy-Optimisation` 的算法结构和指标，不直接复制代码。
+- MACPO/MAPPO-Lag 仅参考 `external/Multi-Agent-Constrained-Policy-Optimisation` 的算法结构和指标，不直接复制代码。
 - HOCBF-QP 使用本项目 double-integrator 公式自实现；QP 后端优先 `osqp` 或 `cvxpy`，并用单元测试覆盖单约束、多约束、slack 激活和不可行退化。
 - `macbf/gcbfplus` 只用于理解 graph/neural barrier 的局部邻居建模、barrier residual 诊断和可视化；不替换 HOCBF-QP。
 - DGN+MAPPO baseline 参考 DGN 的邻接图/图卷积思想，代码按本项目网络接口重写，避免无许可证代码迁移。
@@ -301,13 +300,13 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 **目标**：把 Phase 2 的双积分器结论迁移到更真实的四旋翼动力学和通信扰动压力测试。
 
 **环境路线**：
-- 首选 `gym-pybullet-drones` 作为 Phase 3 外部依赖或 wrapper 对象，新增 `envs/pybullet_uav_env.py` 适配本项目 `reset/step/get_state/get_phys_edges` 接口。
+- 首选 `external/gym-pybullet-drones` 作为 Phase 3 外部依赖，新增 `envs/pybullet_uav_env.py` 封装 `VelocityAviary` 或 `MultiHoverAviary`，适配本项目 `reset/step/state/get_physical_graph/compute_cbf_values` 接口。
 - `safe-control-gym` 用作约束、扰动、随机种子和安全控制日志协议参考，不作为主环境替代。
-- Flightmare 仅作为后续视觉/高保真候选，不进入 Phase 3 默认依赖。
+- 不手写四旋翼动力学，不修改 `external/gym-pybullet-drones` 源码；SafeComm 只自写 adapter、奖励/成本、通信图和观测转换。
 
 **域随机化原则**：
-- 文献只支持随机化维度，不支持旧报告中的固定精确范围。候选维度包括质量/惯量、推力或电机响应、传感噪声、相对定位误差、风扰、下洗交互、通信延迟、丢包、乱序/异步和预算抖动。
-- 默认配置先使用保守 sweep，并把每个范围写入 `configs/phase3_pybullet.yaml`；范围必须通过消融或平台规格校准后才能在论文中作为实验设置报告。
+- 文献只支持随机化维度，不支持旧报告中的固定精确范围。候选维度包括传感噪声、相对定位误差、通信延迟、丢包、乱序/异步、预算抖动，以及底层 Aviary 明确支持的物理扰动。
+- 默认配置先使用保守 sweep，并把每个范围写入 `configs/pybullet.yaml`；范围必须通过消融或平台规格校准后才能在论文中作为实验设置报告。
 - 通信扰动不再写成“某论文推荐参数”。延迟、丢包和乱序只作为工程压力测试维度，报告 FE、Collision、CVR、MPS、intervention rate 和 QP slack 退化曲线。
 
 ### Phase 4（可选）
@@ -316,8 +315,8 @@ $\lambda_\text{int}$ 激活使 intervention rate 和 $\bar{\|a^\pi - a^*\|}$ 随
 
 **可参考代码**：
 - `InforMARL` 支持局部信息聚合和 3/7/10/15 agents 扩展证据，可参考其规模迁移评估协议。
-- MAT 只作为 scalable critic / sequence-modeling 候选，不作为 Phase 4 必选项。
-- MOMAland 只参考多目标多智能体 benchmark 的指标组织；由于 GPL-3.0，不复制实现。
+- `MAGIC` 可参考 masked attention/message processor 的邻接 mask 处理。
+- `gcbfplus` 可作为 graph CBF/GCBF+ 独立 baseline 或安全图诊断参考；不替代 SafeComm 主线。
 
 ---
 

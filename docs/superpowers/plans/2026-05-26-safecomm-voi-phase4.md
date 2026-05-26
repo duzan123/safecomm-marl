@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.x, NumPy, PyTorch (MultiheadAttention), PyYAML, pytest
 
+**外部代码复用边界（Phase 4）：**
+- `external/InforMARL`（MIT）参考局部图观测、邻接矩阵、规模迁移评估和 3/7/10/15 agents 实验组织；不引入其旧 torch-geometric 依赖栈，不复制完整 runner。
+- `external/MAGIC`（MIT）参考 masked attention/message processor 的邻接 mask 处理；Phase 4 的 `ScalableCritic` 使用本项目 PyTorch `MultiheadAttention` 自写。
+- `external/gcbfplus`（MIT）可作为 N 扩展下 graph CBF/GCBF+ 独立 baseline 参考；SafeComm 主线仍使用 HOCBF-QP 和本项目 scheduler。
+- `external/DGN` 无明确许可证，只用于描述通信受限图 MARL baseline，不复制源码。
+- 任何多跳图传播、Transformer critic 或集中式 critic 只能用于训练期 critic 或明确标注的 ablation；执行期通信仍只能使用 `E_t` 内消息，不能破坏 `|E_t| <= k`。
+
 ---
 
 ## 文件结构
@@ -661,6 +668,8 @@ tests/test_pursuit_env.py::TestUAVPursuitEnv::test_n8_agents PASSED
 **Files:**
 - Create: `algorithms/scalable_critic.py`
 - Test: `tests/test_scalable_critic.py`
+
+**实现边界：** 该 critic 参考 InforMARL 的局部图信息聚合评估思路和 MAGIC 的 masked attention 结构，但实现必须是本项目内的最小 PyTorch 模块。critic 可以使用全局 token 做 CTDE 训练；actor 执行期仍只能读取自身观测和 `E_t` 中的消息。
 
 ### 步骤
 

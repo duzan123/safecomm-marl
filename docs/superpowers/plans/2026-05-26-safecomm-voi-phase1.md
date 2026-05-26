@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.x, NumPy, PyTorch, pytest, PyYAML
 
+**外部代码复用边界（Phase 1）：**
+- `external/on-policy`（MIT）只参考 R-MAPPO 的 GAE、PPO clip、actor/critic 更新和 CTDE rollout 组织；本阶段保持轻量 `ppo_utils.py`，不迁移 on-policy runner、env wrapper 或训练脚本体系。
+- `external/MAGIC`（MIT）可参考 masked attention 的邻接 mask 写法；本阶段自写 `MessageEncoder`/attention 聚合接口，保证只聚合 `E_t` 内消息。
+- `external/InforMARL`（MIT）只参考局部图观测和邻接矩阵组织，不引入 torch-geometric 依赖。
+- `external/sched_net` 无明确许可证且为 TF1 风格，只作为“共享信道 + k 个通信名额”的问题设定参考；`SafetyPriorityScheduler` 和 VoI 公式必须完整自写。
+- Phase 1 不复制任何外部仓库源码片段；若后续借鉴 MIT 片段，需要在文件注释或文档中标明来源和 commit。
+
 ---
 
 ## 文件结构

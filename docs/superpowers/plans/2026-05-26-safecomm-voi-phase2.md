@@ -6,7 +6,14 @@
 
 **Architecture:** Phase 2 在 Phase 1 的 SafeCommVoI 主类上分三层扩展：(1) 新增独立 `HOCBFQPShield` 模块处理 per-agent QP 过滤，rollout 同时记录 a^π 和 a^*；(2) 扩展 RolloutBuffer 存储 intervention cost，IntCostCritic 估计 V^C_int，update() 中加入 safety gate EMA 和条件式 λ_int 更新；(3) 基于配置参数的 baseline 包装器类和独立 MACPO 类，evaluate.py 支持 with/without QP 两种评估模式。
 
-**Tech Stack:** Python 3.x, NumPy, PyTorch, scipy（SLSQP QP solver），pytest, PyYAML
+**Tech Stack:** Python 3.x, NumPy, PyTorch, scipy（SLSQP QP solver；可在稳定后替换为 OSQP/CVXPY 后端），pytest, PyYAML
+
+**外部代码复用边界（Phase 2）：**
+- `external/Multi-Agent-Constrained-Policy-Optimisation` 只参考 MACPO/MAPPO-Lagrangian 的 cost critic、dual update、baseline 指标和实验命名；许可证文件含冲突标记，且 runner/env 接口与本项目不匹配，不复制代码。
+- `external/gcbfplus` 可参考 pairwise CBF、safe/unsafe mask、图环境诊断和 GCBF+ 作为独立 baseline 的组织方式；SafeComm 主安全层仍自写 C+ HOCBF-QP。
+- `external/macbf` 可参考 neural barrier 的 mask、loss 和可视化指标；不把 TF1 neural CBF 迁入 PyTorch 主线，也不替代 HOCBF-QP。
+- `external/DGN` 无明确许可证，只参考 DGN+MAPPO baseline 的图通信设定；本项目用 PyTorch masked GAT/message passing 自写。
+- `external/on-policy` 可继续参考 PPO 更新细节；Phase 2 不引入其完整 runner。
 
 ---
 
@@ -44,6 +51,8 @@
 **Files:**
 - Create: `algorithms/hocbf_qp.py`
 - Test: `tests/test_hocbf_qp.py`
+
+**实现边界：** 该模块按本项目 double-integrator C+ HOCBF 公式自实现。`gcbfplus` 和 `macbf` 只能用于理解 pairwise barrier mask、safe/unsafe 诊断和可视化指标；不要把 neural/graph CBF 代码复制进 `hocbf_qp.py`，也不要把它们作为 HOCBF-QP 的替代实现。
 
 ### 步骤
 
@@ -1180,6 +1189,10 @@ git commit -m "feat: add lambda_int, safety gate EMA, hierarchical MGDA (Phase 2
 
 ### 背景
 
+baseline 必须服务论文对照，而不是复刻外部仓库。MAPPO/MAPPO-Lag 参考 `external/on-policy` 与 MACPO/MAPPO-Lagrangian 的训练语义，DGN+MAPPO 只保留“通信受限图聚合”对照含义，所有类均复用本项目 `SafeCommVoI`、scheduler、buffer 和网络接口。
+
+DGN 源仓库无明确许可证，因此 `baselines/dgn_mappo.py` 必须自写 PyTorch 版 masked graph aggregation，不能复制 `external/DGN` 的 TensorFlow 代码。RandomTopK 是 SafeComm 调度器消融，不是外部算法复现。
+
 5 个 baseline 均基于 SafeCommVoI 基础设施，通过配置覆盖实现：
 - 全通信：`schedule_mode="full"`，`k=9999`
 - 无安全：`safety_budget=1e9`，`use_hocbf_qp=False`
@@ -1370,7 +1383,9 @@ git commit -m "feat: add SafeCommVoI-based baseline wrappers (MAPPO, MAPPO-Lag, 
 
 ### 背景
 
-MACPO（Yang et al. 2021）使用安全梯度投影而非 Lagrangian。核心差异：
+MACPO/MAPPO-Lagrangian 参考 Gu et al. 的多智能体约束策略优化路线，以及 `external/Multi-Agent-Constrained-Policy-Optimisation` 中 cost critic、约束优势和投影更新的组织方式。该外部仓库许可证文件含冲突标记，且实现与其 runner/env 强绑定，本项目只实现可测的简化 baseline，不复制源码。
+
+MACPO baseline 使用安全梯度投影而非 Lagrangian。核心差异：
 - 若 J_safe > d：将任务梯度投影到安全梯度的正交补空间
 - 若 J_safe ≤ d：使用标准任务梯度
 
@@ -1380,7 +1395,7 @@ MACPO（Yang et al. 2021）使用安全梯度投影而非 Lagrangian。核心差
 
 ```python
 """
-MACPO Baseline（Yang et al. 2021 简化版）。
+MACPO Baseline（Gu et al. MACPO 路线的简化版）。
 
 核心机制：安全梯度投影（safe gradient projection），
 比 MAPPO-Lag 更直接处理约束边界。
