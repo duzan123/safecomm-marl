@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from numbers import Integral, Real
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -32,30 +33,21 @@ class UAVFormationEnv:
         K_obs_neighbors: int = 4,
         seed: Optional[int] = None,
     ) -> None:
-        if n_agents <= 0:
-            raise ValueError("n_agents must be positive")
-        if dt <= 0:
-            raise ValueError("dt must be positive")
-        if max_steps <= 0:
-            raise ValueError("max_steps must be positive")
-        if K_obs_neighbors < 0:
-            raise ValueError("K_obs_neighbors must be non-negative")
-
-        self.n_agents = int(n_agents)
+        self.n_agents = self._validate_int("n_agents", n_agents, min_value=2)
         self.n = self.n_agents
-        self.dt = float(dt)
-        self.max_steps = int(max_steps)
-        self.d_min = float(d_min)
-        self.R_comm = float(R_comm)
-        self.v_max = float(v_max)
-        self.a_max = float(a_max)
-        self.arena_size = float(arena_size)
+        self.dt = self._validate_float("dt", dt, min_value=0.0, inclusive=False)
+        self.max_steps = self._validate_int("max_steps", max_steps, min_value=1)
+        self.d_min = self._validate_float("d_min", d_min, min_value=0.0, inclusive=False)
+        self.R_comm = self._validate_float("R_comm", R_comm, min_value=0.0, inclusive=True)
+        self.v_max = self._validate_float("v_max", v_max, min_value=0.0, inclusive=False)
+        self.a_max = self._validate_float("a_max", a_max, min_value=0.0, inclusive=False)
+        self.arena_size = self._validate_float("arena_size", arena_size, min_value=0.0, inclusive=False)
         self.formation_radius = formation_radius
         self.goal_altitude = float(goal_altitude)
         self.w_formation = float(w_formation)
         self.w_success = float(w_success)
         self.success_threshold = float(success_threshold)
-        self.K_obs = int(K_obs_neighbors)
+        self.K_obs = self._validate_int("K_obs_neighbors", K_obs_neighbors, min_value=0)
         self.K_obs_neighbors = self.K_obs
 
         self.obs_dim = 6 + self.K_obs * 6
@@ -95,6 +87,8 @@ class UAVFormationEnv:
         actions = np.asarray(actions, dtype=np.float32)
         if actions.shape != (self.n_agents, self.act_dim):
             raise ValueError(f"actions must have shape {(self.n_agents, self.act_dim)}, got {actions.shape}")
+        if not np.all(np.isfinite(actions)):
+            raise ValueError("actions must be finite")
 
         actions = np.clip(actions, -self.a_max, self.a_max)
 
@@ -131,6 +125,32 @@ class UAVFormationEnv:
                 dist = float(np.linalg.norm(self.positions[i] - self.positions[j]))
                 cbf_values[(i, j)] = float(max(dist - self.d_min, 0.0) ** 2)
         return cbf_values
+
+    @staticmethod
+    def _validate_int(name: str, value: int, min_value: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise ValueError(f"{name} must be an integer")
+        value = int(value)
+        if value < min_value:
+            raise ValueError(f"{name} must be >= {min_value}")
+        return value
+
+    @staticmethod
+    def _validate_float(name: str, value: float, min_value: float, inclusive: bool) -> float:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise ValueError(f"{name} must be a finite real number")
+        value = float(value)
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite")
+        if inclusive:
+            valid = value >= min_value
+            op = ">="
+        else:
+            valid = value > min_value
+            op = ">"
+        if not valid:
+            raise ValueError(f"{name} must be {op} {min_value}")
+        return value
 
     def _get_obs(self, agent_idx: int) -> np.ndarray:
         obs = np.zeros(self.obs_dim, dtype=np.float32)
