@@ -5,7 +5,7 @@
 **算法**：SafeComm-VoI（Safety-aware Value-of-Information Multi-Agent RL）  
 **目标期刊**：NeurIPS / ICML / ICLR  
 **问题**：CDecPOSG-CB — 通信受限多 UAV 编队控制中安全约束与通信预算的联合优化  
-**设计规格**：`docs/superpowers/specs/2026-05-26-safecomm-voi-design.md`
+**设计规格**：`docs/superpowers/plans/2026-05-26-safecomm-voi-design.md`
 
 ---
 
@@ -195,7 +195,7 @@ Claude 操作步骤：
 Claude 操作步骤：
 1. 检查第4节约束清单，判断是否有明确约束覆盖该问题
 2. **有约束**：引用对应约束条款，给出明确答案（不需要讨论备选方案）
-3. **无约束**：查阅 `docs/superpowers/specs/2026-05-26-safecomm-voi-design.md`，做出决策，**将新决策追加到第4节约束清单**，并更新本文档
+3. **无约束**：查阅 `docs/superpowers/plans/2026-05-26-safecomm-voi-design.md`，做出决策，**将新决策追加到第4节约束清单**，并更新本文档
 
 ### 场景 C：阻塞诊断
 

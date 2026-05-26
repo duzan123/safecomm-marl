@@ -25,10 +25,11 @@
 ## 当前状态
 
 - **阶段**：设计 + 实施计划完成，代码尚未实现（Phase 1 待执行）
-- 文献调研（4 个方向，共约 50 篇）已完成 → `docs/lit_review/`
-- 系统设计规格已完成 → `docs/superpowers/specs/2026-05-26-safecomm-voi-design.md`
+- 文献调研（8 个方向，共约 50 篇，已核验）已完成 → `docs/lit_review_verified_2026-05-26/`
+- 系统设计规格已完成 → `docs/superpowers/plans/2026-05-26-safecomm-voi-design.md`
 - 4 阶段详细实施计划已完成 → `docs/superpowers/plans/`
-- 总体协调手册已完成（Claude 审查用）→ `docs/superpowers/specs/2026-05-26-safecomm-voi-master-coordination.md`
+- 总体协调手册已完成（Claude 审查用）→ `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md`
+- 10 个相关开源仓库已克隆 → `external/`（DGN、InforMARL、MAGIC、MACPO、gcbfplus、gym-pybullet-drones、macbf、on-policy、safe-control-gym、sched_net）
 - 源代码尚未创建，依赖项和工具链未建立
 
 **协作模型**：Claude 负责阶段审查、架构决策、阻塞诊断；Codex 负责具体代码实现。阶段切换需 Claude 审查通过后方可进入下一阶段。
@@ -159,17 +160,22 @@ safecomm-marl/
 
 ## 文档索引
 
-### 文献调研
-- `docs/lit_review/00_synthesis_report.md` — 综合报告（约 50 篇）
-- `docs/lit_review/01_safe_marl.md` — 安全 MARL 方向
-- `docs/lit_review/02_comm_constrained_marl.md` — 通信受限 MARL 方向
-- `docs/lit_review/03_safety_comm_intersection.md` — 安全×通信交叉方向
-- `docs/lit_review/04_uav_formation.md` — 多 UAV 编队控制方向
+### 文献调研（已核验版本）
+- `docs/lit_review_verified_2026-05-26/00_synthesis_report.md` — 综合报告
+- `docs/lit_review_verified_2026-05-26/01_safe_marl.md` — 安全 MARL 方向
+- `docs/lit_review_verified_2026-05-26/02_comm_constrained_marl.md` — 通信受限 MARL 方向
+- `docs/lit_review_verified_2026-05-26/03_safety_comm_intersection.md` — 安全×通信交叉方向
+- `docs/lit_review_verified_2026-05-26/04_uav_formation.md` — 多 UAV 编队控制方向
+- `docs/lit_review_verified_2026-05-26/05_multi_objective_pareto_marl.md` — 多目标 Pareto MARL
+- `docs/lit_review_verified_2026-05-26/06_cbf_mpc_shielding_safe_marl.md` — CBF/MPC/Shielding 安全方法
+- `docs/lit_review_verified_2026-05-26/07_graph_attention_scalable_marl.md` — 图注意力可扩展 MARL
+- `docs/lit_review_verified_2026-05-26/08_sim2real_uav_marl.md` — Sim2Real UAV MARL
+- `docs/archive/lit_review/` — 旧版文献调研（已归档，仅供参考）
 
 ### 设计规格
-- `docs/superpowers/specs/2026-05-25-safecomm-marl-design.md` — 初版设计规格（SafeComm-PSched，已过时）
-- `docs/superpowers/specs/2026-05-26-safecomm-voi-design.md` — **当前设计规格**（SafeComm-VoI，算法伪代码、实验设计、理论贡献）
-- `docs/superpowers/specs/2026-05-26-safecomm-voi-master-coordination.md` — **Claude 协调手册**（阶段门控标准、12 项架构约束、审查协议）
+- `docs/archive/2026-05-25-safecomm-marl-design.md` — 初版设计规格（SafeComm-PSched，已过时）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-design.md` — **当前设计规格**（SafeComm-VoI，算法伪代码、实验设计、理论贡献）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md` — **Claude 协调手册**（阶段门控标准、12 项架构约束、审查协议）
 
 ### 实施计划（供 Codex 执行）
 - `docs/superpowers/plans/2026-05-26-safecomm-voi-phase1.md` — Phase 1：VoI 调度器 + 原型

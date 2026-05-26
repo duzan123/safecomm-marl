@@ -1202,6 +1202,8 @@ DGN 源仓库无明确许可证，因此 `baselines/dgn_mappo.py` 必须自写 P
 
 - [ ] **Step 1: 创建 baselines/__init__.py**
 
+注意：此时 `macpo.py` 尚未创建（Task 6 创建），暂不导入。Task 6 Step 1 会更新此文件添加 MACPO。
+
 ```python
 """SafeComm-VoI Baselines for Phase 2 comparison."""
 from baselines.mappo import MAPPOAgent
@@ -1209,11 +1211,10 @@ from baselines.mappo_lag import MAPPOLagAgent
 from baselines.dgn_mappo import DGNMAPPOAgent
 from baselines.hocbf_ppo import HOCBFPPOAgent
 from baselines.random_topk import SafeCommRandomTopK
-from baselines.macpo import MACPOAgent
 
 __all__ = [
     "MAPPOAgent", "MAPPOLagAgent", "DGNMAPPOAgent",
-    "HOCBFPPOAgent", "SafeCommRandomTopK", "MACPOAgent",
+    "HOCBFPPOAgent", "SafeCommRandomTopK",
 ]
 ```
 
@@ -1601,7 +1602,26 @@ class MACPOAgent(SafeCommVoI):
         }
 ```
 
-- [ ] **Step 2: 写 baselines 冒烟测试**
+- [ ] **Step 2: 更新 baselines/__init__.py，加入 MACPOAgent**
+
+将 `baselines/__init__.py` 完整替换为（Task 5 版本 + MACPO）：
+
+```python
+"""SafeComm-VoI Baselines for Phase 2 comparison."""
+from baselines.mappo import MAPPOAgent
+from baselines.mappo_lag import MAPPOLagAgent
+from baselines.dgn_mappo import DGNMAPPOAgent
+from baselines.hocbf_ppo import HOCBFPPOAgent
+from baselines.random_topk import SafeCommRandomTopK
+from baselines.macpo import MACPOAgent
+
+__all__ = [
+    "MAPPOAgent", "MAPPOLagAgent", "DGNMAPPOAgent",
+    "HOCBFPPOAgent", "SafeCommRandomTopK", "MACPOAgent",
+]
+```
+
+- [ ] **Step 4: 写 baselines 冒烟测试**
 
 新建 `tests/test_baselines.py`：
 
@@ -1648,7 +1668,7 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
 ```
 
-- [ ] **Step 3: 运行 baseline 测试**
+- [ ] **Step 5: 运行 baseline 测试**
 
 ```bash
 cd /root/autodl-tmp/safecomm-marl && python -m pytest tests/test_baselines.py -v
@@ -1656,10 +1676,10 @@ cd /root/autodl-tmp/safecomm-marl && python -m pytest tests/test_baselines.py -v
 
 预期：6 个 parametrized 测试全部 `PASSED`
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 6: 提交**
 
 ```bash
-cd /root/autodl-tmp/safecomm-marl && git add baselines/macpo.py tests/test_baselines.py
+cd /root/autodl-tmp/safecomm-marl && git add baselines/__init__.py baselines/macpo.py tests/test_baselines.py
 git commit -m "feat: add MACPO baseline with safety gradient projection (Phase 2)"
 ```
 
