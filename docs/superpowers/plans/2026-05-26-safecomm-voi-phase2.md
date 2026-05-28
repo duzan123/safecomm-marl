@@ -33,6 +33,7 @@
 | `baselines/random_topk.py` | 新建 | SafeComm-RandomTopK（全安全 + random 调度器）包装器 |
 | `baselines/macpo.py` | 新建 | MACPO（全通信 + 安全梯度投影，独立子类）|
 | `evaluate.py` | 新建 | 评估脚本，支持 `--no_qp` 模式（Shield Independence Eval）|
+| `train.py` | 修改 | 新增 WandB 初始化和 metrics 记录（约束 13）|
 | `configs/ablation/beta_zero.yaml` | 新建 | w/o AoI 消融 |
 | `configs/ablation/no_cbf_buffer.yaml` | 新建 | w/o 保守缓冲消融 |
 | `configs/ablation/no_hocbf_qp.yaml` | 新建 | w/o HOCBF-QP 消融 |
@@ -42,7 +43,7 @@
 | `tests/test_hocbf_qp.py` | 新建 | HOCBF-QP 单元测试 |
 | `tests/test_baselines.py` | 新建 | baselines 冒烟测试 |
 
-**Phase 1 不修改的文件（保持不变）：** `algorithms/scheduler.py`、`envs/uav_formation_env.py`、`train.py`
+**Phase 1 不修改的文件（保持不变）：** `algorithms/scheduler.py`、`envs/uav_formation_env.py`
 
 ---
 
@@ -1916,6 +1917,78 @@ cd /root/autodl-tmp/safecomm-marl && mkdir -p configs/ablation
         "lambda_int_init": safety_cfg.get("lambda_int_init", 0.0),
         "safety_budget_int": safety_cfg.get("safety_budget_int", 0.5),
 ```
+
+- [ ] **Step 3b: 在 train.py 中集成 WandB（架构约束 13）**
+
+在 `train.py` 顶部 imports 之后添加：
+
+```python
+import os
+import wandb
+from datetime import datetime
+```
+
+在 `main()` 函数中，agent 初始化之后（`agent = SafeCommVoI(...)`）立即添加：
+
+```python
+    # WandB 初始化（正式训练必须启用，smoke test 通过 WANDB_MODE=disabled 跳过）
+    run_name = (
+        f"SafeCommVoI-N{env_cfg.get('n_agents', 4)}-k{cfg_flat.get('k', 4)}"
+        f"-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+    wandb.init(
+        project="safecomm-marl",
+        name=run_name,
+        config=cfg_flat,
+        tags=[f"phase2", f"N{env_cfg.get('n_agents', 4)}"],
+    )
+```
+
+在训练循环内，每次迭代 `print(...)` 日志之后添加：
+
+```python
+            # WandB metrics 记录（Phase 2 全量指标）
+            wandb.log(
+                {
+                    "train/actor_loss": update_info["actor_loss"],
+                    "train/critic_loss": update_info.get("critic_loss", 0.0),
+                    "train/lambda_s": update_info["lambda_s"],
+                    "train/lambda_int": update_info.get("lambda_int", 0.0),
+                    "train/J_safe": update_info["J_safe"],
+                    "train/J_int": update_info.get("J_int", 0.0),
+                    "train/safe_gate_active": update_info.get("safe_gate_active", 0),
+                    "train/approx_kl": update_info["approx_kl"],
+                    "train/mean_episode_cost": rollout_info["mean_episode_cost"],
+                    "train/mean_formation_error": rollout_info.get("mean_formation_error", 0.0),
+                    "train/mean_bandwidth_util": rollout_info["mean_bandwidth_util"],
+                    "train/fps": fps,
+                },
+                step=agent.total_steps,
+            )
+```
+
+训练结束后（循环外，`agent.save(...)` 之后）添加：
+
+```python
+    wandb.finish()
+```
+
+**注意**：测试文件（`test_algorithm.py` 等）顶部需添加以下代码防止 WandB 干扰：
+
+```python
+import os
+os.environ.setdefault("WANDB_MODE", "disabled")
+```
+
+- [ ] **Step 3c: 运行 train.py dry-run 验证 WandB 集成正确**
+
+```bash
+cd /root/autodl-tmp/safecomm-marl
+# 用 disabled 模式验证不报错
+WANDB_MODE=disabled python train.py --config configs/default.yaml --max_iterations 3
+```
+
+预期：3 次迭代正常完成，无 wandb 相关错误
 
 - [ ] **Step 4: Phase 2 集成冒烟测试**
 

@@ -1,0 +1,35 @@
+# 敏感信息
+.env
+*.env
+secrets.yaml
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 训练产物
+checkpoints/
+*.pt
+*.pth
+runs/
+wandb/
+
+# 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/

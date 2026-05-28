@@ -2,6 +2,97 @@
 
 本文件为 Claude Code 在此仓库中工作时提供指导。所有交流（回复、提问、注释说明等）均使用**简体中文**。
 
+---
+
+## ⚡ 新 Agent 快速定向（首次进入此仓库必读）
+
+> **如果你是刚被分配到这个仓库的 Claude 或 Codex agent，请先读完本节再做任何操作。**
+
+### 项目一句话
+
+这是一个 MARL 学术研究项目，目标发表 NeurIPS/ICML/ICLR。正在实现 **SafeComm-VoI** 算法（安全感知 VoI 通信调度 + HOCBF-QP + 双约束 Lagrangian + 两阶段 MGDA）。
+
+### 当前进度快照（2026-05-29）
+
+| 阶段 | 状态 | 说明 |
+|------|------|------|
+| Phase 1：VoI 调度器 + 原型 | ✅ **已完成** | 80 tests passing，commit `4f1e825` |
+| Phase 2：完整 SafeComm-VoI | 🔄 **下一步执行** | 提示词已就绪，等待 Codex 执行 |
+| Phase 3：PyBullet + 域随机化 | ⬜ 待开始 | 依赖 Phase 2 |
+| Phase 4：多任务 + N≥8 扩展 | ⬜ 待开始 | 依赖 Phase 3 |
+
+### Phase 1 已实现的文件（不得修改）
+
+```
+envs/uav_formation_env.py       ← 双积分器 UAV 环境（11 tests）
+algorithms/scheduler.py         ← VoI 感知调度器（8 tests）
+algorithms/networks.py          ← Actor/Critic/MessageEncoder（Phase 2 会扩展）
+algorithms/ppo_utils.py         ← RolloutBuffer/GAE/PPO clip（Phase 2 会扩展）
+algorithms/safecomm_psched.py   ← SafeCommVoI 主类（Phase 2 会扩展）
+configs/default.yaml            ← 默认超参数
+train.py                        ← 训练入口（Phase 2 会添加 WandB）
+tests/test_env.py               ← 11 tests ✅
+tests/test_ppo_utils.py         ← 全部通过 ✅
+tests/test_networks.py          ← 全部通过 ✅
+tests/test_scheduler.py         ← 8 tests ✅
+tests/test_algorithm.py         ← 含 test_phase1_smoke ✅
+```
+
+### 立即要做的事：执行 Phase 2
+
+**Phase 2 Codex 综合执行提示词文件**：
+`docs/superpowers/plans/2026-05-26-phase2-codex-prompts.md`
+
+该文件包含一个可直接发给 Codex 的综合提示词，Codex 读取后会自主调度子 agent 按顺序完成 Phase 2 的 7 个 Task：
+
+| Task | 内容 | 新增文件 |
+|------|------|---------|
+| 1 | C+ HOCBF-QP Shield | `algorithms/hocbf_qp.py`, `tests/test_hocbf_qp.py` |
+| 2 | IntCostCritic + RolloutBuffer 扩展 | 修改 `networks.py`, `ppo_utils.py` |
+| 3 | 双动作 collect_rollout（a^π vs a^*） | 修改 `safecomm_psched.py` |
+| 4 | λ_int + Safety Gate EMA + 层级 MGDA | 修改 `safecomm_psched.py` |
+| 5 | 5 个 Baseline 包装器 | `baselines/` 目录 |
+| 6 | MACPO baseline + test_baselines.py | `baselines/macpo.py`, `tests/test_baselines.py` |
+| 7 | evaluate.py + 消融配置 + WandB 集成 | `evaluate.py`, `configs/ablation/`, 修改 `train.py` |
+
+**Phase 2 门控标准（完成后请 Claude 审查）**：
+见 `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md` 第3节"Phase 2 → Phase 3 门控"。
+
+### 新服务器环境搭建
+
+```bash
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 配置 WandB（API Key 不在 git 中，必须手动创建 .env）
+echo "WANDB_API_KEY=<向用户索取>" > .env
+
+# 3. 验证 Phase 1 环境正常
+pytest tests/ -v
+# 预期：80 tests passing
+
+# 4. external/ 参考仓库（634MB，git 只追踪 commit hash，需手动重新克隆）
+# 参见仓库根目录的迁移说明，或向用户确认是否需要
+```
+
+### 协作模型
+
+- **Claude**：阶段门控审查、架构决策、阻塞诊断（不写代码）
+- **Codex**：具体代码实现，每个 Task 后运行测试并提交
+- **阶段切换**：Codex 完成某阶段所有 Task → 将 `pytest tests/ -v` 完整输出发给 Claude → Claude 逐条审查门控标准 → 出具 ✅/❌ 结论
+
+### 关键架构约束（共 13 条，不得违反）
+
+完整约束见 `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md` 第4节。最重要的 5 条：
+
+1. **双动作不变项**：buffer 存 a^π，环境执行 a^*，严禁混淆
+2. **CBF 缓冲区**：d_buf = v_max × dt_comm，调度器和 QP 使用完全相同公式
+3. **QP slack 保留**：ξ ≥ 0 不可去掉，优化变量固定 4 维
+4. **Safety gate 用 EMA**：λ_int 更新条件基于 EMA，不用单次 rollout
+5. **WandB 强制**：Phase 2 起所有正式训练必须初始化 WandB，API key 仅存 .env
+
+---
+
 ## 用户偏好
 
 - 默认使用简体中文回复用户。
@@ -24,13 +115,14 @@
 
 ## 当前状态
 
-- **阶段**：设计 + 实施计划完成，代码尚未实现（Phase 1 待执行）
+- **阶段**：Phase 1 ✅ 已完成（门控通过），Phase 2 🔄 待执行（提示词已就绪）
 - 文献调研（8 个方向，共约 50 篇，已核验）已完成 → `docs/lit_review_verified_2026-05-26/`
 - 系统设计规格已完成 → `docs/superpowers/plans/2026-05-26-safecomm-voi-design.md`
 - 4 阶段详细实施计划已完成 → `docs/superpowers/plans/`
 - 总体协调手册已完成（Claude 审查用）→ `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md`
-- 10 个相关开源仓库已克隆 → `external/`（DGN、InforMARL、MAGIC、MACPO、gcbfplus、gym-pybullet-drones、macbf、on-policy、safe-control-gym、sched_net）
-- 源代码尚未创建，依赖项和工具链未建立
+- **Phase 2 Codex 执行提示词已就绪** → `docs/superpowers/plans/2026-05-26-phase2-codex-prompts.md`
+- Phase 1 源代码已完成：80 tests passing（见顶部"新 Agent 快速定向"节）
+- 10 个相关开源仓库已克隆 → `external/`（git 只追踪 commit hash，新服务器需重新克隆）
 
 **协作模型**：Claude 负责阶段审查、架构决策、阻塞诊断；Codex 负责具体代码实现。阶段切换需 Claude 审查通过后方可进入下一阶段。
 
@@ -119,11 +211,55 @@ safecomm-marl/
 
 ## 构建与运行命令
 
-> 代码实现后在此处补充：
-> - 安装依赖：`pip install -r requirements.txt`
-> - 训练：`python train.py --config configs/default.yaml`
-> - 评估：`python evaluate.py --checkpoint <path>`
-> - 单测：`pytest tests/test_scheduler.py -v`
+```bash
+# 安装依赖
+pip install -r requirements.txt
+
+# 配置 WandB（首次使用）
+export WANDB_API_KEY=$(cat .env | grep WANDB_API_KEY | cut -d= -f2)
+# 或直接：export WANDB_API_KEY=<your_key>
+
+# 训练（含 WandB 自动记录）
+python train.py --config configs/default.yaml
+
+# 评估（with/without QP Shield）
+python evaluate.py --checkpoint checkpoints/final.pt --episodes 20
+python evaluate.py --checkpoint checkpoints/final.pt --no_qp
+
+# 单测
+pytest tests/test_scheduler.py -v
+pytest tests/ -v
+```
+
+---
+
+## WandB 训练追踪
+
+所有正式训练必须通过 WandB 追踪，本地开发测试（smoke test）可通过 `WANDB_MODE=disabled` 跳过。
+
+- **账号**：1974693174@qq.com
+- **项目名**：`safecomm-marl`
+- **API Key**：存储在 `.env` 文件中（已加入 `.gitignore`，**禁止写入任何 git 追踪文件**）
+- **本地设置**：
+  ```bash
+  echo "WANDB_API_KEY=<your_key>" > .env   # .env 已在 .gitignore 中
+  ```
+- **train.py 集成要求**（Phase 2 起）：
+  ```python
+  import wandb, os
+  from dotenv import load_dotenv
+  load_dotenv()  # 读取 .env
+  wandb.init(project="safecomm-marl", config=cfg, name=run_name)
+  # 每次迭代后：
+  wandb.log({...metrics...}, step=agent.total_steps)
+  wandb.finish()
+  ```
+- **WandB run 命名规范**：`{AlgoName}-N{n_agents}-k{k}-{YYYYMMDD_HHMMSS}`
+  - 示例：`SafeCommVoI-N4-k4-20260527_143022`
+- **必须记录的 metrics**：
+  - 每次迭代：`actor_loss`、`critic_loss`、`lambda_s`、`J_safe`、`approx_kl`、`mean_episode_cost`、`mean_formation_error`、`mean_bandwidth_util`
+  - Phase 2 起额外：`lambda_int`、`safe_gate_active`、`J_int`、`mean_xi`
+- **smoke test 中禁用 WandB**：在测试代码顶部设置 `os.environ["WANDB_MODE"] = "disabled"`
 
 ---
 
@@ -178,7 +314,11 @@ safecomm-marl/
 - `docs/superpowers/plans/2026-05-26-safecomm-voi-master-coordination.md` — **Claude 协调手册**（阶段门控标准、12 项架构约束、审查协议）
 
 ### 实施计划（供 Codex 执行）
-- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase1.md` — Phase 1：VoI 调度器 + 原型
-- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase2.md` — Phase 2：完整 SafeComm-VoI（HOCBF-QP + 双约束）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase1.md` — Phase 1：VoI 调度器 + 原型（✅ 已完成）
+- `docs/superpowers/plans/2026-05-26-safecomm-voi-phase2.md` — Phase 2：完整 SafeComm-VoI（HOCBF-QP + 双约束）（🔄 下一步）
 - `docs/superpowers/plans/2026-05-26-safecomm-voi-phase3.md` — Phase 3：PyBullet + 域随机化
 - `docs/superpowers/plans/2026-05-26-safecomm-voi-phase4.md` — Phase 4：多任务 + N≥8 扩展
+
+### Codex 执行提示词
+- `docs/superpowers/plans/2026-05-26-phase1-codex-prompts.md` — Phase 1 分 Task 提示词（已完成，仅供参考）
+- `docs/superpowers/plans/2026-05-26-phase2-codex-prompts.md` — **Phase 2 综合执行提示词**（将文件内容直接发给 Codex，Codex 自主调度子 agent 完成所有 Task）
